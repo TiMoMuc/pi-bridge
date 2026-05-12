@@ -1,0 +1,9 @@
+FROM codercom/code-server:4.112.0
+
+USER root
+
+COPY code-server/bootstrap.sh /usr/local/bin/code-server-bootstrap
+COPY code-server/extensions.txt /usr/local/share/pi-code-server-extensions.txt
+RUN chmod +x /usr/local/bin/code-server-bootstrap
+
+ENTRYPOINT ["/usr/local/bin/code-server-bootstrap"]

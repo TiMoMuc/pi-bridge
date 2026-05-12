@@ -1,0 +1,5 @@
+# Default code-server extensions installed for every workspace.
+# One extension ID per line.
+
+ms-vscode.live-server
+bierner.markdown-mermaid

@@ -1,0 +1,25 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache \
+    bash \
+    ca-certificates \
+    curl \
+    python3 \
+    py3-pip \
+    tree \
+    py3-jinja2 \
+    py3-requests \
+    py3-yaml
+
+RUN curl -LsSf https://astral.sh/uv/install.sh \
+    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
+ && ln -sf /usr/bin/pip3 /usr/local/bin/pip
+
+RUN python3 --version \
+ && pip --version \
+ && uv --version \
+ && python3 -c "import jinja2, requests, yaml"
+
+WORKDIR /workspace

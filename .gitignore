@@ -1,0 +1,21 @@
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+
+# Environment (copy .env.example → .env and fill in)
+.env*
+# Except .env.example, which is a template for the above
+!.env.example
+
+# Runtime workspace (bind-mount target — all user data lives here, symlink on dev machines)
+workspace-host
+workspace-dev
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/settings.json
+.idea/

@@ -400,7 +400,7 @@ Each provisioned workspace is now a normal host-side git repo for SSH maintenanc
 
 The bridge creates an initial snapshot when a workspace is provisioned or first healed on startup, then commits one new snapshot after every completed inbound or scheduled workspace run. Session JSONL files under `.bridge/sessions/` are included in that history, so a purely conversational turn still produces a commit when the session log changes.
 
-Remote maintenance can use normal SSH git workflows against the workspace root as long as the worktree is clean; the repo is configured with `receive.denyCurrentBranch=updateInstead`. The current `!reset-workspace` command remains intentionally destructive and recreates fresh git history instead of preserving the old history.
+Remote maintenance can use normal SSH git workflows against the workspace root; the live repo is configured with `receive.denyCurrentBranch=updateInstead` plus a bridge-seeded `push-to-checkout` hook that updates the separate-git-dir worktree/index without moving the branch ref itself. The current `!reset-workspace` command remains intentionally destructive and recreates fresh git history instead of preserving the old history.
 
 ### Sandboxing
 

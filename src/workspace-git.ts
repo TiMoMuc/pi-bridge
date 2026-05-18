@@ -11,6 +11,12 @@ const EXCLUDE_PATTERNS = ["/.bridge/git/"];
 const BRIDGE_GIT_USER_NAME = "pi-bridge";
 const BRIDGE_GIT_USER_EMAIL = "bridge@localhost";
 const INITIAL_COMMIT_MESSAGE = "bridge: initialize workspace history";
+const PUSH_TO_CHECKOUT_HOOK_NAME = "push-to-checkout";
+const PUSH_TO_CHECKOUT_HOOK_CONTENT = `#!/bin/sh
+gitdir=$(git rev-parse --absolute-git-dir)
+worktree=$(cd "$gitdir/../.." && pwd)
+GIT_DIR="$gitdir" GIT_WORK_TREE="$worktree" git read-tree -u -m HEAD "$1"
+`;
 
 export type WorkspaceGitRunSource = "inbound" | "scheduled";
 
@@ -71,6 +77,7 @@ export class WorkspaceGitManager {
 
     await this.ensureGitPointer(paths);
     await this.configureRepo(paths);
+    await this.ensurePushToCheckoutHook(paths);
     await this.ensureExcludeFile(paths);
     await this.ensureInitialCommit(paths);
   }
@@ -139,6 +146,17 @@ export class WorkspaceGitManager {
     await this.runGitDir(paths, ["config", "receive.denyCurrentBranch", "updateInstead"]);
     await this.runGitDir(paths, ["config", "user.name", BRIDGE_GIT_USER_NAME]);
     await this.runGitDir(paths, ["config", "user.email", BRIDGE_GIT_USER_EMAIL]);
+  }
+
+  private async ensurePushToCheckoutHook(paths: WorkspacePaths): Promise<void> {
+    const hookPath = path.join(paths.gitDir, "hooks", PUSH_TO_CHECKOUT_HOOK_NAME);
+    await fs.mkdir(path.dirname(hookPath), { recursive: true });
+
+    const current = await fs.readFile(hookPath, "utf8").catch(() => "");
+    if (current !== PUSH_TO_CHECKOUT_HOOK_CONTENT) {
+      await fs.writeFile(hookPath, PUSH_TO_CHECKOUT_HOOK_CONTENT, "utf8");
+    }
+    await fs.chmod(hookPath, 0o755);
   }
 
   private async ensureExcludeFile(paths: WorkspacePaths): Promise<void> {

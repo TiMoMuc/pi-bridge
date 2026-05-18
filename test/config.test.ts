@@ -28,6 +28,9 @@ describe("loadConfig", () => {
     delete process.env["WORKSPACE_DIR"];
     delete process.env["BLUEPRINT_DIR"];
     delete process.env["SYSTEM_DIR"];
+    delete process.env["BRIDGE_RUNTIME_UID"];
+    delete process.env["BRIDGE_RUNTIME_GID"];
+    delete process.env["BRIDGE_DOCKER_SOCKET_GID"];
     delete process.env["BRIDGE_DATA_HOST_DIR"];
     delete process.env["BRIDGE_DATA_DIR_HOST"];
     delete process.env["PROJECTS_HOST_DIR"];
@@ -106,6 +109,7 @@ describe("loadConfig", () => {
     expect(c.bridgeDataDir).toBe("/bridge-data");
     expect(c.projectsDir).toBe("/bridge-data/projects");
     expect(c.adminPhone).toBeUndefined();
+    expect(c.runtimeIdentity).toBeUndefined();
     expect(c.sandboxImage).toBe(DEFAULT_SANDBOX_IMAGE);
     expect(c.sandboxNetwork).toBe("none");
     expect(c.sandboxCwd).toBe(DEFAULT_SANDBOX_CWD);
@@ -221,6 +225,39 @@ describe("loadConfig", () => {
     const c = loadConfig();
     expect(c.bridgeDataHostDir).toBe("/srv/bridge-data");
     expect(c.projectsHostDir).toBe("/srv/projects");
+  });
+
+  it("reads the optional advanced runtime identity override", () => {
+    process.env["BRIDGE_RUNTIME_UID"] = "1001";
+    process.env["BRIDGE_RUNTIME_GID"] = "1001";
+    process.env["BRIDGE_DOCKER_SOCKET_GID"] = "989";
+
+    expect(loadConfig().runtimeIdentity).toEqual({
+      uid: 1001,
+      gid: 1001,
+      dockerSocketGid: 989,
+    });
+  });
+
+  it("requires BRIDGE_RUNTIME_UID and BRIDGE_RUNTIME_GID together", () => {
+    process.env["BRIDGE_RUNTIME_UID"] = "1001";
+    expect(() => loadConfig()).toThrow("BRIDGE_RUNTIME_UID and BRIDGE_RUNTIME_GID must be set together");
+  });
+
+  it("requires BRIDGE_DOCKER_SOCKET_GID when the runtime identity override is enabled", () => {
+    process.env["BRIDGE_RUNTIME_UID"] = "1001";
+    process.env["BRIDGE_RUNTIME_GID"] = "1001";
+    expect(() => loadConfig()).toThrow("BRIDGE_DOCKER_SOCKET_GID is required");
+  });
+
+  it("rejects BRIDGE_DOCKER_SOCKET_GID on its own", () => {
+    process.env["BRIDGE_DOCKER_SOCKET_GID"] = "989";
+    expect(() => loadConfig()).toThrow("BRIDGE_DOCKER_SOCKET_GID requires BRIDGE_RUNTIME_UID and BRIDGE_RUNTIME_GID");
+  });
+
+  it("rejects invalid advanced runtime identity values", () => {
+    process.env["BRIDGE_RUNTIME_UID"] = "user";
+    expect(() => loadConfig()).toThrow("BRIDGE_RUNTIME_UID must be a non-negative integer");
   });
 
   it("derives the default projects host dir from the bridge data host dir", () => {

@@ -117,6 +117,51 @@ Notes:
 - the defaults `BRIDGE_DATA_DIR=/bridge-data` and `PROJECTS_DIR=/bridge-data/projects` are usually the right choice
 - removed legacy env names are no longer accepted; the bridge now fails fast with exact replacement guidance if it sees them
 
+#### Advanced / dev: run the bridge and siblings as a specific host UID:GID
+
+By default, the Compose setup in this repo keeps the current root/root runtime shape.
+Leave the advanced runtime-identity env vars unset unless you explicitly want the
+bridge, sandbox, and code-server to write bind-mounted host files as a specific host
+user.
+
+Optional advanced/dev `.env` settings:
+
+```env
+BRIDGE_RUNTIME_UID=1001
+BRIDGE_RUNTIME_GID=1001
+BRIDGE_DOCKER_SOCKET_GID=989
+```
+
+Typical host checks before filling those values in:
+
+```bash
+id -u
+id -g
+stat -c 'path=%n owner_uid=%u owner_gid=%g mode=%a' /var/run/docker.sock
+```
+
+Use this only when all of the following are true:
+
+- you want host-visible workspace and bridge-data files to be owned by a real maintenance user
+- you have already stopped the bridge and manually re-owned the managed trees under `BRIDGE_DATA_HOST_DIR` and `PROJECTS_HOST_DIR`
+- you know the numeric group that owns `/var/run/docker.sock` on the host and set `BRIDGE_DOCKER_SOCKET_GID` to that value
+
+Important truths:
+
+- this is an **advanced/dev override**, not the default operator path
+- the bridge remains a **high-trust control-plane service** even in non-root mode, because Docker socket access still grants broad control over sibling containers
+- if these values are wrong, sandbox/code-server lifecycle operations will fail
+- non-root sandbox mode aligns host file ownership, but root-only package-manager commands inside the sandbox may stop working; leave the override unset if you want the existing root/root behavior
+
+One-time host migration before enabling the override:
+
+```bash
+cd /path/to/pi-bridge
+docker compose down
+sudo chown -R <user>:<group> /absolute/path/to/bridge-data
+# and /absolute/path/to/projects too when it is a separate tree
+```
+
 ### 3. Build and start
 
 ```bash

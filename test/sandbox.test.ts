@@ -81,7 +81,15 @@ describe("sandboxConfigFromEnv", () => {
       cpus: 2000000000,
       network: "bridge",
       cwd: "/workspace/work",
+      runtimeIdentity: undefined,
     });
+  });
+
+  it("threads the optional runtime identity override into sandbox config", () => {
+    const result = sandboxConfigFromEnv(makeConfig({
+      runtimeIdentity: { uid: 1001, gid: 1001, dockerSocketGid: 989 },
+    }));
+    expect(result.runtimeIdentity).toEqual({ uid: 1001, gid: 1001, dockerSocketGid: 989 });
   });
 });
 
@@ -130,6 +138,39 @@ describe("SandboxManager reconciliation", () => {
 
     expect(calls.some(({ args }) => args[0] === "rm" && args[2] === "pi-sandbox-signal_-123")).toBe(true);
     expect(calls.filter(({ args }) => args[0] === "run" && args.includes("pi-sandbox-signal_-123"))).toHaveLength(1);
+  });
+
+  it("passes the configured runtime identity into new sandbox containers", async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const mgr = new SandboxManager(
+      {
+        image: "pi-bridge-sandbox:latest",
+        memory: 536870912,
+        cpus: 1000000000,
+        network: "none",
+        cwd: "/workspace",
+        runtimeIdentity: { uid: 1001, gid: 1001, dockerSocketGid: 989 },
+      },
+      {
+        execSimple: async (cmd, args) => {
+          calls.push({ cmd, args });
+          if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
+            throw new Error("missing");
+          }
+          if (args[0] === "exec") {
+            return "";
+          }
+          return "";
+        },
+      },
+    );
+
+    await mgr.getOrCreateExecutor("signal_+123", "/host/users/signal_+123");
+
+    const runCall = calls.find(({ args }) => args[0] === "run");
+    expect(runCall?.args).toContain("--user");
+    expect(runCall?.args).toContain("1001:1001");
+    expect(runCall?.args).toContain("HOME=/tmp");
   });
 
   it("reconciliation removes orphaned legacy containers and keeps healthy labelled ones", async () => {

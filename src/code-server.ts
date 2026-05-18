@@ -5,7 +5,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
-import type { CodeServerConfig } from "./config.js";
+import type { CodeServerConfig, RuntimeIdentityConfig } from "./config.js";
 import type { WorkspaceRecord } from "./provisioner.js";
 import type { TransportName } from "./transport.js";
 import { codeServerStatePaths as bridgeCodeServerStatePaths, normalizeWorkspacePath, workspacePaths } from "./workspace-paths.js";
@@ -28,12 +28,38 @@ export interface CodeServerAccess {
   port: number;
 }
 
+interface CodeServerRuntimeConfig {
+  user: string;
+  home: string;
+  configHome: string;
+  dataHome: string;
+}
+
 interface CodeServerManagerDeps {
   execSimple?: typeof execSimple;
   project?: string;
   bridgeProjectsDir?: string;
   bridgeDataHostDir?: string;
+  runtimeIdentity?: RuntimeIdentityConfig;
 }
+
+const ROOT_CODE_SERVER_RUNTIME: CodeServerRuntimeConfig = {
+  user: "root",
+  home: "/root",
+  configHome: "/root/.config",
+  dataHome: "/root/.local/share",
+};
+const NON_ROOT_CODE_SERVER_RUNTIME = {
+  home: "/tmp",
+  configHome: "/tmp/pi-code-server-config",
+  dataHome: "/tmp/pi-code-server-data",
+} as const;
+const CODE_SERVER_STATE_MOUNT_DESTINATIONS = new Set<string>([
+  ROOT_CODE_SERVER_RUNTIME.configHome,
+  ROOT_CODE_SERVER_RUNTIME.dataHome,
+  NON_ROOT_CODE_SERVER_RUNTIME.configHome,
+  NON_ROOT_CODE_SERVER_RUNTIME.dataHome,
+]);
 
 export function codeServerLocalUrl(bindHost: string, port: number): string {
   const host = bindHost === "0.0.0.0" ? "localhost" : bindHost;
@@ -61,6 +87,7 @@ export class CodeServerManager {
   private readonly bridgeProjectsDir: string;
   private readonly bridgeDataDir: string;
   private readonly bridgeDataHostDir: string;
+  private readonly runtimeIdentity?: RuntimeIdentityConfig;
 
   constructor(
     private readonly config: CodeServerConfig,
@@ -74,20 +101,22 @@ export class CodeServerManager {
       this.bridgeDataHostDir = deps.bridgeDataHostDir ?? this.bridgeDataDir;
       this.execSimpleFn = deps.execSimple ?? execSimple;
       this.project = deps.project ?? process.env["BRIDGE_CONTAINER_NAME"] ?? "pi-bridge";
+      this.runtimeIdentity = deps.runtimeIdentity;
     } else {
       this.bridgeProjectsDir = bridgeDataDirOrDeps.bridgeProjectsDir ?? hostProjectsDir;
       this.bridgeDataDir = hostProjectsDir;
       this.bridgeDataHostDir = bridgeDataDirOrDeps.bridgeDataHostDir ?? this.bridgeDataDir;
       this.execSimpleFn = bridgeDataDirOrDeps.execSimple ?? execSimple;
       this.project = bridgeDataDirOrDeps.project ?? process.env["BRIDGE_CONTAINER_NAME"] ?? "pi-bridge";
+      this.runtimeIdentity = bridgeDataDirOrDeps.runtimeIdentity;
     }
   }
 
   async validate(): Promise<void> {
     try {
-      await this.execSimpleFn("docker", ["--version"]);
+      await this.execSimpleFn("docker", ["ps", "-a", "--format", "{{.Names}}"]);
     } catch {
-      throw new Error("Docker is not available. Install Docker for code-server sibling containers.");
+      throw new Error("Docker is not available or the bridge cannot access the Docker daemon. Check Docker, /var/run/docker.sock, and any configured BRIDGE_RUNTIME_UID / BRIDGE_RUNTIME_GID / BRIDGE_DOCKER_SOCKET_GID values.");
     }
   }
 
@@ -125,6 +154,7 @@ export class CodeServerManager {
       configDir: await canonicalizePath(hostStatePaths.configDir),
       dataDir: await canonicalizePath(hostStatePaths.dataDir),
     };
+    const runtime = codeServerRuntime(this.runtimeIdentity);
 
     const state = await this.inspectContainer(containerName);
 
@@ -135,7 +165,7 @@ export class CodeServerManager {
         this.inspectExpectedLabels(containerName, workspaceKey, effectiveTransport),
       ]);
       const expectedPort = `${this.config.bindHost}:${access.port}`;
-      if (codeServerMountsMatch(existingMounts, canonicalWorkspacePath, canonicalStatePaths) && existingPort === expectedPort && labelsMatch) {
+      if (codeServerMountsMatch(existingMounts, canonicalWorkspacePath, canonicalStatePaths, runtime) && existingPort === expectedPort && labelsMatch) {
         if (state === "stopped") {
           await this.execSimpleFn("docker", ["start", containerName]);
           console.log(`[code-server] Restarted stopped container: ${containerName}`);
@@ -245,12 +275,13 @@ export class CodeServerManager {
         configDir: await canonicalizePath(statePaths.configDir),
         dataDir: await canonicalizePath(statePaths.dataDir),
       };
+      const runtime = codeServerRuntime(this.runtimeIdentity);
       const [existingMounts, existingPort, labelsMatch] = await Promise.all([
         this.inspectCanonicalMounts(container.name),
         this.inspectPublishedPort(container.name),
         this.inspectExpectedLabels(container.name, workspaceKey, expectedTransport),
       ]);
-      const healthy = codeServerMountsMatch(existingMounts, expectedMount, canonicalStatePaths)
+      const healthy = codeServerMountsMatch(existingMounts, expectedMount, canonicalStatePaths, runtime)
         && (!expectedPort || existingPort === expectedPort)
         && labelsMatch;
       if (!healthy) {
@@ -277,6 +308,7 @@ export class CodeServerManager {
     workspaceKey: string,
     transport: TransportName | "unknown",
   ): Promise<void> {
+    const runtime = codeServerRuntime(this.runtimeIdentity);
     const args = [
       "run", "-d",
       "--name", name,
@@ -287,8 +319,11 @@ export class CodeServerManager {
         project: this.project,
       }),
       "--restart", "unless-stopped",
-      "--user", "root",
+      "--user", runtime.user,
       "-p", `${this.config.bindHost}:${access.port}:8080`,
+      "-e", `HOME=${runtime.home}`,
+      "-e", `XDG_CONFIG_HOME=${runtime.configHome}`,
+      "-e", `XDG_DATA_HOME=${runtime.dataHome}`,
       "-e", "CS_BIND_ADDR=0.0.0.0:8080",
       "-e", "CS_AUTH=password",
       "-e", `CS_PASSWORD=${access.password}`,
@@ -308,8 +343,8 @@ export class CodeServerManager {
       "-v", `${workspacePath}:/workspace`,
       "-v", `${path.join(workspacePath, ".bridge")}:/workspace/.bridge:ro`,
       "-v", `${path.join(workspacePath, "upload")}:/workspace/upload:ro`,
-      "-v", `${statePaths.configDir}:/root/.config`,
-      "-v", `${statePaths.dataDir}:/root/.local/share`,
+      "-v", `${statePaths.configDir}:${runtime.configHome}`,
+      "-v", `${statePaths.dataDir}:${runtime.dataHome}`,
       "-w", "/workspace",
       this.config.image,
     ];
@@ -351,8 +386,7 @@ export class CodeServerManager {
           mount.Destination === "/workspace"
           || mount.Destination === "/workspace/.bridge"
           || mount.Destination === "/workspace/upload"
-          || mount.Destination === "/root/.config"
-          || mount.Destination === "/root/.local/share"
+          || CODE_SERVER_STATE_MOUNT_DESTINATIONS.has(mount.Destination)
         ) {
           relevant[mount.Destination] = mount.Source;
         }
@@ -415,16 +449,30 @@ export class CodeServerManager {
   }
 }
 
+function codeServerRuntime(runtimeIdentity?: RuntimeIdentityConfig): CodeServerRuntimeConfig {
+  if (!runtimeIdentity) {
+    return ROOT_CODE_SERVER_RUNTIME;
+  }
+
+  return {
+    user: `${runtimeIdentity.uid}:${runtimeIdentity.gid}`,
+    home: NON_ROOT_CODE_SERVER_RUNTIME.home,
+    configHome: NON_ROOT_CODE_SERVER_RUNTIME.configHome,
+    dataHome: NON_ROOT_CODE_SERVER_RUNTIME.dataHome,
+  };
+}
+
 function codeServerMountsMatch(
   mounts: Record<string, string>,
   workspaceRoot: string,
   statePaths: { configDir: string; dataDir: string },
+  runtime: CodeServerRuntimeConfig,
 ): boolean {
   return mounts["/workspace"] === workspaceRoot
     && mounts["/workspace/.bridge"] === path.join(workspaceRoot, ".bridge")
     && mounts["/workspace/upload"] === path.join(workspaceRoot, "upload")
-    && mounts["/root/.config"] === statePaths.configDir
-    && mounts["/root/.local/share"] === statePaths.dataDir;
+    && mounts[runtime.configHome] === statePaths.configDir
+    && mounts[runtime.dataHome] === statePaths.dataDir;
 }
 
 function formatCodeServerMountSummary(mounts: Record<string, string>): string {

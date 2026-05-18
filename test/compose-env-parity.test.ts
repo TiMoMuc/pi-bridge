@@ -19,6 +19,10 @@ function extractRuntimeEnvKeysFromConfig(source: string): string[] {
     keys.add(match[1]);
   }
 
+  for (const match of source.matchAll(/\bparseOptionalIdEnv\("([A-Z0-9_]+)"\)/g)) {
+    keys.add(match[1]);
+  }
+
   return [...keys].sort();
 }
 
@@ -110,6 +114,9 @@ describe("config.ts ↔ docker-compose env parity", () => {
       "NEXTCLOUD_BOT_SECRET",
       "CODE_SERVER_EXTENSIONS",
       "SANDBOX_CWD",
+      "BRIDGE_RUNTIME_UID",
+      "BRIDGE_RUNTIME_GID",
+      "BRIDGE_DOCKER_SOCKET_GID",
     ]));
   });
 
@@ -127,5 +134,11 @@ describe("config.ts ↔ docker-compose env parity", () => {
     expect(volumes).toContain(
       "${PROJECTS_HOST_DIR:-${BRIDGE_DATA_HOST_DIR:-./bridge-data}/projects}:${PROJECTS_DIR:-/bridge-data/projects}",
     );
+  });
+
+  it("keeps the advanced runtime identity override explicit in docker-compose", () => {
+    expect(composeSource).toContain('user: "${BRIDGE_RUNTIME_UID:-0}:${BRIDGE_RUNTIME_GID:-0}"');
+    expect(composeSource).toContain('group_add:');
+    expect(composeSource).toContain('- "${BRIDGE_DOCKER_SOCKET_GID:-0}"');
   });
 });

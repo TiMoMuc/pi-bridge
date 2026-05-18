@@ -18,7 +18,7 @@
 
 import { spawn } from "node:child_process";
 import * as path from "node:path";
-import { resolveSandboxCwd, SANDBOX_WORKSPACE_ROOT, type Config } from "./config.js";
+import { resolveSandboxCwd, SANDBOX_WORKSPACE_ROOT, type Config, type RuntimeIdentityConfig } from "./config.js";
 import type { WorkspaceRecord } from "./provisioner.js";
 import type { TransportName } from "./transport.js";
 import { WORKSPACE_BRIDGE_DIRNAME, WORKSPACE_UPLOAD_DIRNAME, workspacePaths } from "./workspace-paths.js";
@@ -44,6 +44,7 @@ export interface SandboxConfig {
   cpus: number;        // nanoCPUs, e.g. 1_000_000_000 (1 CPU)
   network: string;     // Docker network name, e.g. "none" or "bridge"
   cwd: string;         // in-container cwd for sandboxed tool execution
+  runtimeIdentity?: RuntimeIdentityConfig;
 }
 
 export function sandboxConfigFromEnv(config: Config): SandboxConfig {
@@ -53,6 +54,7 @@ export function sandboxConfigFromEnv(config: Config): SandboxConfig {
     cpus: config.sandboxCpus,
     network: config.sandboxNetwork,
     cwd: resolveSandboxCwd(config.sandboxCwd),
+    runtimeIdentity: config.runtimeIdentity,
   };
 }
 
@@ -312,10 +314,10 @@ export class SandboxManager {
   /** Validate Docker is available. Call once at startup. */
   async validate(): Promise<void> {
     try {
-      await this.execSimpleFn("docker", ["--version"]);
+      await this.execSimpleFn("docker", ["ps", "-a", "--format", "{{.Names}}"]);
     } catch {
       throw new Error(
-        "Docker is not available. Install Docker to run sandbox-backed workspaces.",
+        "Docker is not available or the bridge cannot access the Docker daemon. Check Docker, /var/run/docker.sock, and any configured BRIDGE_RUNTIME_UID / BRIDGE_RUNTIME_GID / BRIDGE_DOCKER_SOCKET_GID values.",
       );
     }
   }
@@ -402,7 +404,8 @@ export class SandboxManager {
     sandboxId: string,
     transport: TransportName | "unknown",
   ): Promise<void> {
-    const { image, memory, cpus, network } = this.sandboxConfig;
+    const { image, memory, cpus, network, runtimeIdentity } = this.sandboxConfig;
+    const runtimeUser = runtimeIdentity ? `${runtimeIdentity.uid}:${runtimeIdentity.gid}` : undefined;
 
     const args = [
       "run", "-d",
@@ -413,6 +416,7 @@ export class SandboxManager {
         transport,
         project: this.project,
       }),
+      ...(runtimeUser ? ["--user", runtimeUser, "-e", "HOME=/tmp"] : []),
       "--memory", String(memory),
       "--cpus", String(cpus / 1_000_000_000), // Docker CLI uses fractional CPUs
       "--network", network,

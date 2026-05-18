@@ -44,6 +44,12 @@ export interface SessionWatchConfig {
   port: number;
 }
 
+export interface RuntimeIdentityConfig {
+  uid: number;
+  gid: number;
+  dockerSocketGid: number;
+}
+
 export type BridgeAccessMode = "open" | "closed" | "pending";
 export type CodeServerExtensionsMode = "append" | "override";
 export const PI_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -78,6 +84,7 @@ export interface Config {
   /** Internal system prompt root inside the bridge image. Not operator-configurable. */
   systemDir: string;
   adminPhone: string | undefined;
+  runtimeIdentity?: RuntimeIdentityConfig;
 
   sandboxImage: string;
   sandboxMemory: number;
@@ -150,6 +157,11 @@ export function loadConfig(): Config {
     process.env["CODE_SERVER_EXTENSIONS_MODE"] ?? "append",
   );
   const codeServerEnvExtensions = csv("CODE_SERVER_EXTENSIONS");
+  const runtimeIdentity = resolveRuntimeIdentity(
+    parseOptionalIdEnv("BRIDGE_RUNTIME_UID"),
+    parseOptionalIdEnv("BRIDGE_RUNTIME_GID"),
+    parseOptionalIdEnv("BRIDGE_DOCKER_SOCKET_GID"),
+  );
 
   const config: Config = {
     signalCliUrl: process.env["SIGNAL_CLI_URL"] ?? "http://localhost:8080",
@@ -167,6 +179,7 @@ export function loadConfig(): Config {
     blueprintDir: process.env["BLUEPRINT_DIR"] ?? "/app/__blueprint__",
     systemDir: DEFAULT_SYSTEM_DIR,
     adminPhone: normalizeOptionalString(process.env["ADMIN_PHONE"]),
+    runtimeIdentity,
 
     sandboxImage: process.env["SANDBOX_IMAGE"] ?? DEFAULT_SANDBOX_IMAGE,
     sandboxMemory: Number(process.env["SANDBOX_MEMORY"] ?? "536870912"),
@@ -322,6 +335,40 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
+}
+
+function parseOptionalIdEnv(name: string): number | undefined {
+  const raw = normalizeOptionalString(process.env[name]);
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+  return Number(raw);
+}
+
+function resolveRuntimeIdentity(
+  uid: number | undefined,
+  gid: number | undefined,
+  dockerSocketGid: number | undefined,
+): RuntimeIdentityConfig | undefined {
+  if ((uid === undefined) !== (gid === undefined)) {
+    throw new Error("BRIDGE_RUNTIME_UID and BRIDGE_RUNTIME_GID must be set together");
+  }
+  if (uid === undefined || gid === undefined) {
+    if (dockerSocketGid !== undefined) {
+      throw new Error("BRIDGE_DOCKER_SOCKET_GID requires BRIDGE_RUNTIME_UID and BRIDGE_RUNTIME_GID");
+    }
+    return undefined;
+  }
+  if (dockerSocketGid === undefined) {
+    throw new Error("BRIDGE_DOCKER_SOCKET_GID is required when BRIDGE_RUNTIME_UID and BRIDGE_RUNTIME_GID are set");
+  }
+
+  return {
+    uid,
+    gid,
+    dockerSocketGid,
+  };
 }
 
 function normalizeBaseUrl(value: string | undefined): string | undefined {

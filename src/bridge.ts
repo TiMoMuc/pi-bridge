@@ -183,6 +183,7 @@ async function main(): Promise<void> {
   const codeServerManager = new CodeServerManager(config.codeServer, hostProjectsDir, config.bridgeDataDir, {
     bridgeProjectsDir: config.projectsDir,
     bridgeDataHostDir,
+    runtimeIdentity: config.runtimeIdentity,
   });
   await codeServerManager.validate();
   logger.info("bridge", "code-server-ready", `Code-server infrastructure ready: image=${config.codeServer.image}`, {

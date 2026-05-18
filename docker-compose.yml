@@ -24,6 +24,9 @@ services:
     image: "${COMPOSE_PROJECT_NAME:-pi-bridge}:latest"
     container_name: "${COMPOSE_PROJECT_NAME:-pi-bridge}"
     restart: unless-stopped
+    user: "${BRIDGE_RUNTIME_UID:-0}:${BRIDGE_RUNTIME_GID:-0}"
+    group_add:
+      - "${BRIDGE_DOCKER_SOCKET_GID:-0}"
     ports:
       - "${NEXTCLOUD_WEBHOOK_PORT:-8788}:${NEXTCLOUD_WEBHOOK_PORT:-8788}"
       - "${CALENDAR_HTTP_PORT:-8789}:${CALENDAR_HTTP_PORT:-8789}"
@@ -68,6 +71,9 @@ services:
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
       BRIDGE_ACCESS_MODE: "${BRIDGE_ACCESS_MODE:-open}"
       ADMIN_PHONE: "${ADMIN_PHONE:-}"
+      BRIDGE_RUNTIME_UID: "${BRIDGE_RUNTIME_UID:-}"
+      BRIDGE_RUNTIME_GID: "${BRIDGE_RUNTIME_GID:-}"
+      BRIDGE_DOCKER_SOCKET_GID: "${BRIDGE_DOCKER_SOCKET_GID:-}"
       BLUEPRINT_DIR: "/app/__blueprint__"
       BRIDGE_DATA_DIR: "${BRIDGE_DATA_DIR:-/bridge-data}"
       PROJECTS_DIR: "${PROJECTS_DIR:-/bridge-data/projects}"

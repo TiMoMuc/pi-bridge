@@ -329,6 +329,49 @@ describe("CodeServerManager", () => {
     }
   });
 
+  it("uses the optional runtime identity override for code-server state and process user", async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "code-server-runtime-identity-"));
+
+    try {
+      const mgr = new CodeServerManager(
+        {
+          image: "pi-bridge-code-server:latest",
+          bindHost: "127.0.0.1",
+          portStart: 18440,
+          extensionsMode: "append",
+          extensions: ["ms-vscode.live-server"],
+        },
+        tmpDir,
+        {
+          runtimeIdentity: { uid: 1001, gid: 1001, dockerSocketGid: 989 },
+          execSimple: async (cmd: string, args: string[]) => {
+            calls.push({ cmd, args });
+            if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
+              throw new Error("missing");
+            }
+            return "";
+          },
+        },
+      );
+
+      await mgr.ensureRunning("signal_+123", { password: "secret", port: 18440 }, "signal");
+
+      const runCall = calls.find(({ args }) => args[0] === "run");
+      const canonicalConfigDir = await fs.realpath(path.join(tmpDir, "code-server", "signal_+123", "config"));
+      const canonicalDataDir = await fs.realpath(path.join(tmpDir, "code-server", "signal_+123", "data"));
+      expect(runCall?.args).toContain("--user");
+      expect(runCall?.args).toContain("1001:1001");
+      expect(runCall?.args).toContain("HOME=/tmp");
+      expect(runCall?.args).toContain("XDG_CONFIG_HOME=/tmp/pi-code-server-config");
+      expect(runCall?.args).toContain("XDG_DATA_HOME=/tmp/pi-code-server-data");
+      expect(runCall?.args).toContain(`${canonicalConfigDir}:/tmp/pi-code-server-config`);
+      expect(runCall?.args).toContain(`${canonicalDataDir}:/tmp/pi-code-server-data`);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("creates bridge-local directories but mounts host paths into the sibling container", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "code-server-paths-test-"));

@@ -77,10 +77,12 @@ the relative path under `PROJECTS_DIR`. Transport bindings live in
 `primaryTransport` is used for restart-safe scheduled outbound delivery. Bridge-owned
 persistent runtime artifacts now live under `BRIDGE_DATA_DIR/admin/`, including
 `logs/` for structured bridge JSONL, `inbox/` for accepted inbound work waiting
-or replaying, and `outbox/` for pending outbound delivery. The agent's
-in-container cwd defaults to the workspace root (`SANDBOX_CWD=.` →
-`/workspace`) and can be overridden via relative `SANDBOX_CWD` values such as
-`./cowork`.
+or replaying, and `outbox/` for pending outbound delivery. Optional workspace
+capabilities now hang off `workspace.json.capabilities`; the bridge manages
+reachability via per-workspace internal Docker networks while the sandbox still
+calls enabled services directly. The agent's in-container cwd defaults to the
+workspace root (`SANDBOX_CWD=.` → `/workspace`) and can be overridden via
+relative `SANDBOX_CWD` values such as `./cowork`.
 
 ### 5. Dispatch serialization
 One pending `handleMessage` promise per workspace at a time.
@@ -98,6 +100,7 @@ npm run lint         # eslint src test
 npm run check        # typecheck + lint + test — run before every commit
 
 docker compose up --build                           # bridge (runs all configured transports; Signal still uses external signal-cli)
+docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d   # bridge + optional capability containers such as pdf-api
 ```
 
 ## File Map
@@ -119,6 +122,7 @@ src/
   calendar.ts            calendar route/access-doc helpers + local/public subscription URLs
   code-server.ts         per-workspace code-server container lifecycle, mounts, and stable local URLs
   config.ts              env parsing → Config + transport/sandbox/code-server/calendar + default thinking settings
+  workspace-capabilities.ts bridge-owned capability control plane: workspace.json capability toggles, workspace networks, and shared capability container attachments
   events-manager.ts      per-workspace EventsWatcher registry + sender injection from workspace context
   events.ts              EventsWatcher — immediate/one-shot/periodic JSON event files
   format.ts              markdown → Signal body-range text styles
@@ -157,6 +161,7 @@ test/
   code-server.test.ts
   compose-env-parity.test.ts
   config.test.ts
+  workspace-capabilities.test.ts
   events-manager.test.ts
   events.test.ts
   format.test.ts

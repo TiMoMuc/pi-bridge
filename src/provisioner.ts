@@ -21,6 +21,11 @@ import {
   workspacePaths,
   workspaceRegistryPath,
 } from "./workspace-paths.js";
+import {
+  defaultWorkspaceCapabilitiesRecord,
+  normalizeWorkspaceCapabilitiesRecord,
+  type WorkspaceCapabilitiesRecord,
+} from "./workspace-capabilities.js";
 import { WorkspaceGitManager } from "./workspace-git.js";
 
 export const LEGACY_BOOT_COMMAND = "python /workspace/boot.py";
@@ -69,6 +74,7 @@ export interface WorkspaceRecord {
   codeServer?: CodeServerRecord;
   calendar?: CalendarRecord;
   boot?: BootRecord;
+  capabilities?: WorkspaceCapabilitiesRecord;
   /** Preserved for legacy workspace.json compatibility; ignored by current runtime. */
   experimental?: Record<string, unknown>;
   piProvider?: string;
@@ -243,6 +249,7 @@ export class UserProvisioner {
           enabled: false,
         },
         boot: defaultNewWorkspaceBootRecord(this.options.workspaceDefaults),
+        capabilities: defaultWorkspaceCapabilitiesRecord(),
         piProvider: this.options.modelDefaults?.provider,
         piModel: this.options.modelDefaults?.model,
         piThinkingLevel: this.options.modelDefaults?.thinkingLevel,
@@ -303,6 +310,7 @@ export class UserProvisioner {
           enabled: options.defaultCalendarEnabled ?? this.options.workspaceDefaults?.calendarEnabled ?? false,
         },
         boot: defaultNewWorkspaceBootRecord(this.options.workspaceDefaults),
+        capabilities: defaultWorkspaceCapabilitiesRecord(),
         piProvider: this.options.modelDefaults?.provider,
         piModel: this.options.modelDefaults?.model,
         piThinkingLevel: this.options.modelDefaults?.thinkingLevel,
@@ -441,6 +449,14 @@ export class UserProvisioner {
         }
         if (!record["boot"] || typeof record["boot"] !== "object") {
           record["boot"] = { enabled: true };
+          changed = true;
+          if (!updated.includes(workspaceKey)) {
+            updated.push(workspaceKey);
+          }
+        }
+        const normalizedCapabilities = normalizeWorkspaceCapabilitiesRecord(record["capabilities"]);
+        if (!normalizedCapabilities || !normalizedCapabilities.pdfApi) {
+          record["capabilities"] = defaultWorkspaceCapabilitiesRecord();
           changed = true;
           if (!updated.includes(workspaceKey)) {
             updated.push(workspaceKey);
@@ -617,6 +633,7 @@ function normalizeWorkspaceRecord(record: Record<string, unknown>, workspaceKey?
     codeServer: normalizeCodeServerRecord(record["codeServer"]) ?? { enabled: false },
     calendar: normalizeCalendarRecord(record["calendar"]) ?? { enabled: false },
     boot: normalizeBootRecord(record["boot"]) ?? { enabled: true },
+    capabilities: normalizeWorkspaceCapabilitiesRecord(record["capabilities"]) ?? defaultWorkspaceCapabilitiesRecord(),
     experimental: normalizeLegacyExperimentalRecord(record["experimental"]),
     piProvider: normalizeOptionalString(asOptionalString(record["piProvider"])),
     piModel: normalizeOptionalString(asOptionalString(record["piModel"])),

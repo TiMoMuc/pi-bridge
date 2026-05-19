@@ -124,6 +124,9 @@ describe("SandboxManager reconciliation", () => {
               { Destination: '/workspace/upload', Source: '/host/users/signal_+123/upload' },
             ]);
           }
+          if (args[0] === "inspect" && args[2].includes('NetworkSettings.Networks')) {
+            return "none\n";
+          }
           if (args[0] === "exec" && args[1] === "pi-sandbox-signal_-123" && args[2] === "sh") {
             validationAttempts += 1;
             if (validationAttempts === 1) throw new Error("broken mount");
@@ -156,6 +159,9 @@ describe("SandboxManager reconciliation", () => {
           calls.push({ cmd, args });
           if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
             throw new Error("missing");
+          }
+          if (args[0] === "inspect" && args[2].includes('NetworkSettings.Networks')) {
+            return "none\n";
           }
           if (args[0] === "exec") {
             return "";
@@ -208,6 +214,9 @@ describe("SandboxManager reconciliation", () => {
                 { Destination: "/workspace/.bridge", Source: path.join(tmpDir, "users", "signal_+123", ".bridge") },
                 { Destination: "/workspace/upload", Source: path.join(tmpDir, "users", "signal_+123", "upload") },
               ]);
+            }
+            if (args[0] === "inspect" && args[2].includes('NetworkSettings.Networks') && args[3] === "pi-sandbox-signal_-123") {
+              return "none\n";
             }
             if (args[0] === "exec" && args[1] === "pi-sandbox-signal_-123") {
               return "";
@@ -265,6 +274,9 @@ describe("SandboxManager reconciliation", () => {
                 { Destination: "/workspace/.bridge", Source: path.join(expectedMount, ".bridge") },
                 { Destination: "/workspace/upload", Source: path.join(expectedMount, "upload") },
               ]);
+            }
+            if (args[0] === "inspect" && args[2].includes('NetworkSettings.Networks')) {
+              return "none\n";
             }
             if (args[0] === "exec" && args[1] === "pi-sandbox-signal_-123") {
               return "";

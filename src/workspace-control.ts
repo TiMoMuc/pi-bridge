@@ -5,6 +5,12 @@ import { UserEventsManager } from "./events-manager.js";
 import type { UserProvisioner, WorkspaceRecord } from "./provisioner.js";
 import { SessionRouter } from "./session-router.js";
 import { legacyWorkspacePath } from "./workspace-paths.js";
+import {
+  resolveSandboxNetworkName,
+  type WorkspaceCapabilityName,
+  WorkspaceCapabilityManager,
+} from "./workspace-capabilities.js";
+import type { SandboxManager } from "./sandbox.js";
 
 export interface WorkspaceControlSummaryRow {
   workspaceKey: string;
@@ -22,6 +28,9 @@ export interface WorkspaceControlReconcileResult {
   codeServerStopped: string[];
   calendarPrepared: string[];
   calendarRemoved: string[];
+  capabilityAttached: string[];
+  capabilityDetached: string[];
+  capabilityMissing: string[];
   piSelectionChanged: string[];
   runnersReset: string[];
   runnersSkippedActive: string[];
@@ -33,6 +42,9 @@ export interface WorkspaceDesiredStateApplyResult {
   codeServerStopped: boolean;
   calendarPrepared: boolean;
   calendarRemoved: boolean;
+  capabilitiesAttached: WorkspaceCapabilityName[];
+  capabilitiesDetached: WorkspaceCapabilityName[];
+  capabilitiesMissing: WorkspaceCapabilityName[];
 }
 
 export async function summarizeWorkspaceControlState(
@@ -57,13 +69,17 @@ export async function applyWorkspaceDesiredState(params: {
   record: WorkspaceRecord;
   provisioner: UserProvisioner;
   codeServerManager: CodeServerManager;
+  capabilityManager: WorkspaceCapabilityManager;
 }): Promise<WorkspaceDesiredStateApplyResult> {
-  const { workspaceKey, record, provisioner, codeServerManager } = params;
+  const { workspaceKey, record, provisioner, codeServerManager, capabilityManager } = params;
   const result: WorkspaceDesiredStateApplyResult = {
     codeServerStarted: false,
     codeServerStopped: false,
     calendarPrepared: false,
     calendarRemoved: false,
+    capabilitiesAttached: [],
+    capabilitiesDetached: [],
+    capabilitiesMissing: [],
   };
 
   if (record.codeServer?.enabled) {
@@ -89,6 +105,11 @@ export async function applyWorkspaceDesiredState(params: {
     result.calendarRemoved = true;
   }
 
+  const capabilityResult = await capabilityManager.applyWorkspaceCapabilities(workspaceKey, record.capabilities);
+  result.capabilitiesAttached = capabilityResult.attached;
+  result.capabilitiesDetached = capabilityResult.detached;
+  result.capabilitiesMissing = capabilityResult.missing;
+
   return result;
 }
 
@@ -97,10 +118,12 @@ export async function reconcileWorkspaceControlPlane(params: {
   provisioner: UserProvisioner;
   eventsManager: UserEventsManager;
   codeServerManager: CodeServerManager;
+  capabilityManager: WorkspaceCapabilityManager;
+  sandboxManager: SandboxManager;
   router: SessionRouter;
   resetRunners: boolean;
 }): Promise<WorkspaceControlReconcileResult> {
-  const { provisioner, eventsManager, codeServerManager, router, resetRunners } = params;
+  const { provisioner, eventsManager, codeServerManager, capabilityManager, sandboxManager, router, resetRunners, config } = params;
 
   await provisioner.reload();
   const shapeUpdated = await provisioner.reconcileDesiredStateShape();
@@ -110,13 +133,19 @@ export async function reconcileWorkspaceControlPlane(params: {
   const codeServerStopped: string[] = [];
   const calendarPrepared: string[] = [];
   const calendarRemoved: string[] = [];
+  const capabilityAttached: string[] = [];
+  const capabilityDetached: string[] = [];
+  const capabilityMissing: string[] = [];
   const missingDirs: string[] = [];
+  const runnersReset: string[] = [];
+  const runnersSkippedActive = new Set<string>();
 
   const workspaces = Object.entries(provisioner.listWorkspaces()).sort(([a], [b]) => a.localeCompare(b));
 
   for (const [workspaceKey, record] of workspaces) {
     if (record.status === "pending") {
       await codeServerManager.stop(workspaceKey);
+      await capabilityManager.applyWorkspaceCapabilities(workspaceKey);
       continue;
     }
 
@@ -131,16 +160,31 @@ export async function reconcileWorkspaceControlPlane(params: {
           record: provisioned,
           provisioner,
           codeServerManager,
+          capabilityManager,
         });
         if (applied.codeServerStarted) codeServerStarted.push(workspaceKey);
         if (applied.codeServerStopped) codeServerStopped.push(workspaceKey);
         if (applied.calendarPrepared) calendarPrepared.push(workspaceKey);
         if (applied.calendarRemoved) calendarRemoved.push(workspaceKey);
+        capabilityAttached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesAttached));
+        capabilityDetached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesDetached));
+        capabilityMissing.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesMissing));
+        await maybeResetRunnerForCapabilitySurface({
+          workspaceKey,
+          record: provisioned,
+          config,
+          sandboxManager,
+          router,
+          resetRunners,
+          runnersReset,
+          runnersSkippedActive,
+        });
         continue;
       }
 
       missingDirs.push(workspaceKey);
       await codeServerManager.stop(workspaceKey);
+      await capabilityManager.applyWorkspaceCapabilities(workspaceKey);
       continue;
     }
 
@@ -151,24 +195,50 @@ export async function reconcileWorkspaceControlPlane(params: {
       record,
       provisioner,
       codeServerManager,
+      capabilityManager,
     });
 
     if (applied.codeServerStarted) codeServerStarted.push(workspaceKey);
     if (applied.codeServerStopped) codeServerStopped.push(workspaceKey);
     if (applied.calendarPrepared) calendarPrepared.push(workspaceKey);
     if (applied.calendarRemoved) calendarRemoved.push(workspaceKey);
+    capabilityAttached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesAttached));
+    capabilityDetached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesDetached));
+    capabilityMissing.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesMissing));
+    await maybeResetRunnerForCapabilitySurface({
+      workspaceKey,
+      record,
+      config,
+      sandboxManager,
+      router,
+      resetRunners,
+      runnersReset,
+      runnersSkippedActive,
+    });
   }
 
   const runtime = await router.reconcileWorkspacePiSelections(resetRunners);
+  for (const workspaceKey of runtime.reset) {
+    if (!runnersReset.includes(workspaceKey)) {
+      runnersReset.push(workspaceKey);
+    }
+  }
+  for (const workspaceKey of runtime.skippedActive) {
+    runnersSkippedActive.add(workspaceKey);
+  }
+
   return {
     shapeUpdated,
     codeServerStarted,
     codeServerStopped,
     calendarPrepared,
     calendarRemoved,
+    capabilityAttached,
+    capabilityDetached,
+    capabilityMissing,
     piSelectionChanged: runtime.changed,
-    runnersReset: runtime.reset,
-    runnersSkippedActive: runtime.skippedActive,
+    runnersReset,
+    runnersSkippedActive: [...runnersSkippedActive].sort(),
     missingDirs,
   };
 }
@@ -193,12 +263,48 @@ export function formatWorkspaceControlReconcileResult(result: WorkspaceControlRe
     `codeServerStopped=${joinOrNone(result.codeServerStopped)}`,
     `calendarPrepared=${joinOrNone(result.calendarPrepared)}`,
     `calendarRemoved=${joinOrNone(result.calendarRemoved)}`,
+    `capabilityAttached=${joinOrNone(result.capabilityAttached)}`,
+    `capabilityDetached=${joinOrNone(result.capabilityDetached)}`,
+    `capabilityMissing=${joinOrNone(result.capabilityMissing)}`,
     `piSelectionChanged=${joinOrNone(result.piSelectionChanged)}`,
     `runnersReset=${joinOrNone(result.runnersReset)}`,
     `runnersSkippedActive=${joinOrNone(result.runnersSkippedActive)}`,
     `missingDirs=${joinOrNone(result.missingDirs)}`,
   ];
   return lines.join("\n");
+}
+
+function formatCapabilityChanges(workspaceKey: string, capabilities: WorkspaceCapabilityName[]): string[] {
+  return capabilities.map((capability) => `${workspaceKey}:${capability}`);
+}
+
+async function maybeResetRunnerForCapabilitySurface(params: {
+  workspaceKey: string;
+  record: WorkspaceRecord;
+  config: Config;
+  sandboxManager: SandboxManager;
+  router: SessionRouter;
+  resetRunners: boolean;
+  runnersReset: string[];
+  runnersSkippedActive: Set<string>;
+}): Promise<void> {
+  const { workspaceKey, record, config, sandboxManager, router, resetRunners, runnersReset, runnersSkippedActive } = params;
+  if (!resetRunners) return;
+  if (!router.getCachedRunner(workspaceKey)) return;
+
+  const expectedNetwork = resolveSandboxNetworkName(config.sandboxNetwork, workspaceKey, record.capabilities);
+  const usesExpectedNetwork = await sandboxManager.containerUsesExpectedNetwork(workspaceKey, expectedNetwork);
+  if (usesExpectedNetwork) {
+    return;
+  }
+
+  if (router.isActive(workspaceKey)) {
+    runnersSkippedActive.add(workspaceKey);
+    return;
+  }
+
+  await router.reset(workspaceKey);
+  runnersReset.push(workspaceKey);
 }
 
 function joinOrNone(values: string[]): string {

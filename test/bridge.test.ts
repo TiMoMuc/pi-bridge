@@ -136,7 +136,8 @@ describe("bridge orchestration", () => {
       provisioner as never,
       router as never,
       {} as never,
-      async (...args) => {
+      { applyWorkspaceCapabilities: vi.fn(async () => ({ attached: [], detached: [], missing: [], networkCreated: false, networkRemoved: false })) } as never,
+      async (...args: unknown[]) => {
         handled = args;
       },
     );
@@ -196,7 +197,8 @@ describe("bridge orchestration", () => {
       provisioner as never,
       router as never,
       codeServerManager as never,
-      async (...args) => {
+      { applyWorkspaceCapabilities: vi.fn(async () => ({ attached: [], detached: [], missing: [], networkCreated: false, networkRemoved: false })) } as never,
+      async (...args: unknown[]) => {
         handled = args;
       },
     );

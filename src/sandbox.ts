@@ -22,6 +22,7 @@ import { resolveSandboxCwd, SANDBOX_WORKSPACE_ROOT, type Config, type RuntimeIde
 import type { WorkspaceRecord } from "./provisioner.js";
 import type { TransportName } from "./transport.js";
 import { WORKSPACE_BRIDGE_DIRNAME, WORKSPACE_UPLOAD_DIRNAME, workspacePaths } from "./workspace-paths.js";
+import { resolveSandboxNetworkName } from "./workspace-capabilities.js";
 import {
   LEGACY_SANDBOX_CONTAINER_PREFIX,
   canonicalizePath,
@@ -161,6 +162,7 @@ export class SandboxManager {
     sandboxId: string,
     workspacePath: string,
     transport: TransportName | "unknown" = "unknown",
+    expectedNetwork: string = this.sandboxConfig.network,
   ): Promise<DockerExecutor> {
     const containerName = this.containerName(sandboxId);
     const canonicalWorkspacePath = await canonicalizePath(workspacePath);
@@ -169,9 +171,12 @@ export class SandboxManager {
 
     const state = await this.inspectContainer(containerName);
     if (state === "running" || state === "stopped") {
-      const existingMounts = await this.inspectCanonicalMounts(containerName);
+      const [existingMounts, networkMatches] = await Promise.all([
+        this.inspectCanonicalMounts(containerName),
+        this.containerUsesExpectedNetwork(sandboxId, expectedNetwork),
+      ]);
       const mountMatches = mountsMatch(existingMounts, canonicalWorkspacePath);
-      if (mountMatches) {
+      if (mountMatches && networkMatches) {
         if (state === "stopped") {
           await this.execSimpleFn("docker", ["start", containerName]);
           console.log(`[sandbox] Restarted stopped container: ${containerName}`);
@@ -187,14 +192,16 @@ export class SandboxManager {
         }
 
         console.warn(`[sandbox] Broken mount on ${containerName}; recreating`);
-      } else {
+      } else if (!mountMatches) {
         console.log(`[sandbox] Stale mount on ${containerName} (${formatMountSummary(existingMounts)} != ${canonicalWorkspacePath}), recreating`);
+      } else {
+        console.log(`[sandbox] Stale network on ${containerName} (${expectedNetwork}), recreating`);
       }
 
       await this.removeContainerByName(containerName);
     }
 
-    await this.createContainer(containerName, canonicalWorkspacePath, sandboxId, transport);
+    await this.createContainer(containerName, canonicalWorkspacePath, sandboxId, transport, expectedNetwork);
     const healthy = await this.validateWorkspaceMount(containerName);
     if (!healthy) {
       await this.removeContainerByName(containerName);
@@ -293,8 +300,11 @@ export class SandboxManager {
       }
 
       const expectedMount = await canonicalizePath(workspacePath);
+      const expectedNetwork = resolveSandboxNetworkName(this.sandboxConfig.network, workspaceKey, record.capabilities);
       const existingMounts = await this.inspectCanonicalMounts(container.name);
-      const healthy = mountsMatch(existingMounts, expectedMount) && await this.validateWorkspaceMount(container.name);
+      const healthy = mountsMatch(existingMounts, expectedMount)
+        && await this.containerUsesExpectedNetwork(workspaceKey, expectedNetwork)
+        && await this.validateWorkspaceMount(container.name);
       if (!healthy) {
         summary.stale += 1;
         console.warn(`[sandbox] Reconciliation: removing stale container ${container.name} for ${workspaceKey}`);
@@ -309,6 +319,17 @@ export class SandboxManager {
     console.log(
       `[sandbox] Reconciliation summary: healthy=${summary.healthy}, stale=${summary.stale}, orphaned=${summary.orphaned}, legacy=${summary.legacy}`,
     );
+  }
+
+  async containerUsesExpectedNetwork(sandboxId: string, expectedNetwork: string): Promise<boolean> {
+    const containerName = this.containerName(sandboxId);
+    const state = await this.inspectContainer(containerName);
+    if (state === "none") {
+      return false;
+    }
+
+    const networks = await this.inspectNetworkNames(containerName);
+    return networks.has(expectedNetwork);
   }
 
   /** Validate Docker is available. Call once at startup. */
@@ -350,6 +371,25 @@ export class SandboxManager {
       canonical[destination] = await canonicalizePath(source);
     }
     return canonical;
+  }
+
+  private async inspectNetworkNames(name: string): Promise<Set<string>> {
+    try {
+      const result = await this.execSimpleFn("docker", [
+        "inspect",
+        "-f",
+        '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}',
+        name,
+      ]);
+      return new Set(
+        result
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean),
+      );
+    } catch {
+      return new Set();
+    }
   }
 
   private async inspectMounts(name: string): Promise<Record<string, string>> {
@@ -403,8 +443,9 @@ export class SandboxManager {
     workspacePath: string,
     sandboxId: string,
     transport: TransportName | "unknown",
+    network: string,
   ): Promise<void> {
-    const { image, memory, cpus, network, runtimeIdentity } = this.sandboxConfig;
+    const { image, memory, cpus, runtimeIdentity } = this.sandboxConfig;
     const runtimeUser = runtimeIdentity ? `${runtimeIdentity.uid}:${runtimeIdentity.gid}` : undefined;
 
     const args = [

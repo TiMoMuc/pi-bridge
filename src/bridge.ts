@@ -46,6 +46,7 @@ import {
 } from "./workspace-control.js";
 import { workspacePaths } from "./workspace-paths.js";
 import { WorkspaceGitManager } from "./workspace-git.js";
+import { WorkspaceCapabilityManager } from "./workspace-capabilities.js";
 
 export const HELP_TEXT = `Available commands:
 !help            — show this message
@@ -190,6 +191,8 @@ async function main(): Promise<void> {
     codeServerImage: config.codeServer.image,
   });
 
+  const capabilityManager = new WorkspaceCapabilityManager();
+
   const calendarPublisher = new CalendarPublisher(config.calendar, provisioner);
   if (config.calendar.enabled) {
     await calendarPublisher.start();
@@ -310,6 +313,8 @@ async function main(): Promise<void> {
         provisioner,
         eventsManager,
         codeServerManager,
+        capabilityManager,
+        sandboxManager,
         router,
         resetRunners,
       });
@@ -330,7 +335,7 @@ async function main(): Promise<void> {
 
   for (const transport of readyTransports) {
     transport.listen((message: InboundMessage) => {
-      void handleInboundMessage(message, config, transportMap, provisioner, router, codeServerManager, handleMessage, runtimeDeps);
+      void handleInboundMessage(message, config, transportMap, provisioner, router, codeServerManager, capabilityManager, handleMessage, runtimeDeps);
     });
   }
 
@@ -467,6 +472,7 @@ export async function handleInboundMessage(
   provisioner: UserProvisioner,
   router: SessionRouter,
   codeServerManager: CodeServerManager,
+  capabilityManager: WorkspaceCapabilityManager,
   handleMessage: (
     workspaceKey: string,
     text: string,
@@ -555,6 +561,7 @@ export async function handleInboundMessage(
       record,
       provisioner,
       codeServerManager,
+      capabilityManager,
     });
   }
 

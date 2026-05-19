@@ -128,6 +128,15 @@ describe("workspace-control", () => {
       ensureRunning: vi.fn(async () => {}),
       stop: vi.fn(async () => {}),
     };
+    const capabilityManager = {
+      applyWorkspaceCapabilities: vi.fn(async () => ({
+        attached: ["pdfApi"],
+        detached: [],
+        missing: [],
+        networkCreated: true,
+        networkRemoved: false,
+      })),
+    };
 
     const result = await applyWorkspaceDesiredState({
       workspaceKey: "ws_live",
@@ -141,6 +150,7 @@ describe("workspace-control", () => {
       } as never,
       provisioner: provisioner as never,
       codeServerManager: codeServerManager as never,
+      capabilityManager: capabilityManager as never,
     });
 
     expect(provisioner.ensureCodeServerAccess).toHaveBeenCalledWith("ws_live");
@@ -157,6 +167,9 @@ describe("workspace-control", () => {
       codeServerStopped: false,
       calendarPrepared: false,
       calendarRemoved: true,
+      capabilitiesAttached: ["pdfApi"],
+      capabilitiesDetached: [],
+      capabilitiesMissing: [],
     });
   });
 
@@ -214,7 +227,22 @@ describe("workspace-control", () => {
       ensureRunning: vi.fn(async () => {}),
       stop: vi.fn(async () => {}),
     };
+    const capabilityManager = {
+      applyWorkspaceCapabilities: vi.fn(async (workspaceKey?: string, capabilities?: { pdfApi?: { enabled?: boolean } }) => ({
+        attached: workspaceKey === "ws_live" && capabilities?.pdfApi?.enabled !== false ? ["pdfApi"] : [],
+        detached: workspaceKey === "ws_disabled" ? ["pdfApi"] : [],
+        missing: [],
+        networkCreated: workspaceKey === "ws_live",
+        networkRemoved: workspaceKey === "ws_disabled",
+      })),
+    };
+    const sandboxManager = {
+      containerUsesExpectedNetwork: vi.fn(async (_workspaceKey: string, expectedNetwork: string) => expectedNetwork === "none"),
+    };
     const router = {
+      getCachedRunner: vi.fn(() => undefined),
+      isActive: vi.fn(() => false),
+      reset: vi.fn(async () => {}),
       reconcileWorkspacePiSelections: vi.fn(async () => ({
         changed: ["ws_live"],
         reset: ["ws_live"],
@@ -227,6 +255,8 @@ describe("workspace-control", () => {
       provisioner: provisioner as never,
       eventsManager: eventsManager as never,
       codeServerManager: codeServerManager as never,
+      capabilityManager: capabilityManager as never,
+      sandboxManager: sandboxManager as never,
       router: router as never,
       resetRunners: true,
     });
@@ -252,6 +282,9 @@ describe("workspace-control", () => {
       codeServerStopped: ["ws_disabled"],
       calendarPrepared: ["ws_live"],
       calendarRemoved: ["ws_disabled"],
+      capabilityAttached: ["ws_live:pdfApi"],
+      capabilityDetached: ["ws_disabled:pdfApi"],
+      capabilityMissing: [],
       piSelectionChanged: ["ws_live"],
       runnersReset: ["ws_live"],
       runnersSkippedActive: ["ws_disabled"],
@@ -296,7 +329,22 @@ describe("workspace-control", () => {
       ensureRunning: vi.fn(async () => {}),
       stop: vi.fn(async () => {}),
     };
+    const capabilityManager = {
+      applyWorkspaceCapabilities: vi.fn(async () => ({
+        attached: [],
+        detached: [],
+        missing: [],
+        networkCreated: false,
+        networkRemoved: false,
+      })),
+    };
+    const sandboxManager = {
+      containerUsesExpectedNetwork: vi.fn(async () => true),
+    };
     const router = {
+      getCachedRunner: vi.fn(() => undefined),
+      isActive: vi.fn(() => false),
+      reset: vi.fn(async () => {}),
       reconcileWorkspacePiSelections: vi.fn(async () => ({
         changed: [],
         reset: [],
@@ -309,6 +357,8 @@ describe("workspace-control", () => {
       provisioner: provisioner as never,
       eventsManager: eventsManager as never,
       codeServerManager: codeServerManager as never,
+      capabilityManager: capabilityManager as never,
+      sandboxManager: sandboxManager as never,
       router: router as never,
       resetRunners: false,
     });
@@ -326,6 +376,9 @@ describe("workspace-control", () => {
       codeServerStopped: ["ws_b2"],
       calendarPrepared: ["ws_a1"],
       calendarRemoved: [],
+      capabilityAttached: ["ws_a1:pdfApi"],
+      capabilityDetached: [],
+      capabilityMissing: ["ws_b2:pdfApi"],
       piSelectionChanged: ["ws_a1"],
       runnersReset: [],
       runnersSkippedActive: ["ws_b2"],
@@ -336,6 +389,9 @@ describe("workspace-control", () => {
       "codeServerStopped=ws_b2",
       "calendarPrepared=ws_a1",
       "calendarRemoved=none",
+      "capabilityAttached=ws_a1:pdfApi",
+      "capabilityDetached=none",
+      "capabilityMissing=ws_b2:pdfApi",
       "piSelectionChanged=ws_a1",
       "runnersReset=none",
       "runnersSkippedActive=ws_b2",

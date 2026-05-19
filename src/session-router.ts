@@ -12,6 +12,7 @@ import { type AgentRunner, createSenderSession } from "./runner.js";
 import type { SandboxManager, Executor } from "./sandbox.js";
 import type { SessionWatchSink } from "./session-watch.js";
 import { legacyWorkspacePath, workspacePaths } from "./workspace-paths.js";
+import { resolveSandboxNetworkName } from "./workspace-capabilities.js";
 
 interface WorkspaceModelSelection {
   provider: string;
@@ -368,6 +369,7 @@ export class SessionRouter {
       sandboxId,
       hostPaths.root,
       record.primaryTransport,
+      resolveSandboxNetworkName(this.config.sandboxNetwork, workspaceKey, record.capabilities),
     );
   }
 }

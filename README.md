@@ -12,7 +12,8 @@ The bridge can now run **Signal and Nextcloud simultaneously in one process**. G
 README.md                   ← setup guide and operator docs
 AGENTS.md                   ← source-facing context file for coding agents
 package.json                ← npm package metadata and scripts
-docker-compose.yml          ← single compose stack
+docker-compose.yml          ← base compose stack
+docker-compose.capabilities.yml ← optional capability containers (for example `pdf-api`)
 .env.example                ← operator-facing environment example
 
 src/                        ← TypeScript source
@@ -164,13 +165,21 @@ sudo chown -R <user>:<group> /absolute/path/to/bridge-data
 
 ### 3. Build and start
 
+Base bridge only:
+
 ```bash
 docker compose up --build -d
 ```
 
+Bridge plus optional capability containers such as `pdf-api`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d
+```
+
 ### 4. What `docker compose up -d --build` rebuilds
 
-This command rebuilds the **Compose-managed images and containers** in this repo, especially the bridge image and the helper images used for future sibling-container creates.
+This command rebuilds the **Compose-managed images and containers** in this repo, especially the bridge image and the helper images used for future sibling-container creates. If you also use `docker-compose.capabilities.yml`, the same rule applies to those capability containers: Compose owns their lifecycle, while the bridge later attaches them to workspace-specific internal networks as needed.
 
 It does **not** automatically rebuild or recreate existing per-workspace sibling containers such as:
 - sandbox containers like `pi-sandbox-...`
@@ -202,6 +211,8 @@ so accepted inbound work and pending replies survive bridge restarts.
 
 ```bash
 docker compose down
+# or, if you started optional capability containers too:
+docker compose -f docker-compose.yml -f docker-compose.capabilities.yml down
 ```
 
 ---
@@ -236,6 +247,40 @@ Notes:
 - Signal bindings may be either `{ "sender": "+1555..." }` for DMs or `{ "groupId": "...", "userWhitelist": [] }` for shared group workspaces.
 - Nextcloud bindings route by room token, and the bridge may auto-suggest a human-readable `workspacePath` from the room name when provisioning in `open` mode.
 - Pending workspaces stay in the registry and reverse index, but do not provision files or create runners until they are approved and reconciled.
+
+### Optional workspace capabilities
+
+Capability reachability is also controlled through `workspace.json`.
+
+Current first capability:
+
+```json
+"capabilities": {
+  "pdfApi": {
+    "enabled": true
+  }
+}
+```
+
+Behavior:
+
+- `capabilities.pdfApi.enabled` is explicit per workspace
+- no extra `.env` surface is needed for the current `pdf-api` capability
+- the capability container itself is optional infrastructure started through `docker-compose.capabilities.yml`
+- the bridge does **not** proxy capability requests; the sandbox calls the enabled service directly over an internal Docker network
+- enabling a capability may require a fresh runner / sandbox to pick up the new network attachment (`!reset` for that workspace or `admin-workspace.js reconcile --reset-runners` for inactive workspaces)
+
+Start the optional capability container stack with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d
+```
+
+Then apply edited workspace control-plane state with:
+
+```bash
+docker exec <bridge-container> node /app/dist/admin-workspace.js reconcile --reset-runners
+```
 
 ---
 
@@ -533,6 +578,8 @@ You do **not** need `PI_PROVIDER` / `PI_MODEL` / `PI_THINKING_LEVEL` just to aut
 ```bash
 git pull
 docker compose up --build -d
+# or, if you use optional capability containers:
+docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d
 ```
 
 Bridge data under `BRIDGE_DATA_HOST_DIR` (default `bridge-data/`) and workspaces under `PROJECTS_HOST_DIR` (default `bridge-data/projects/`, or `${BRIDGE_DATA_HOST_DIR}/projects` when only `BRIDGE_DATA_HOST_DIR` is set) persist across bridge rebuilds.

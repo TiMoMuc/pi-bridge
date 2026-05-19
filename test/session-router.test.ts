@@ -327,6 +327,7 @@ describe("SessionRouter PI selection", () => {
       "ws_a7b3c9",
       path.join(hostProjectsDir, workspacePath),
       "signal",
+      "none",
     );
     await expect(fs.stat(path.join(bridgeProjectsDir, workspacePath, "cowork"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(bridgeProjectsDir, workspacePath, ".bridge"))).resolves.toBeTruthy();

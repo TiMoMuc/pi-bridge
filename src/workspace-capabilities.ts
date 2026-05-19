@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { sanitizeWorkspaceKey } from "./sibling-containers.js";
 
-export type WorkspaceCapabilityName = "pdfApi";
+export type WorkspaceCapabilityName = "pdfApi" | "spreadsheetRecalc";
 
 export interface CapabilityToggleRecord {
   enabled: boolean;
@@ -9,6 +9,7 @@ export interface CapabilityToggleRecord {
 
 export interface WorkspaceCapabilitiesRecord {
   pdfApi?: CapabilityToggleRecord;
+  spreadsheetRecalc?: CapabilityToggleRecord;
 }
 
 export interface WorkspaceCapabilityApplyResult {
@@ -28,21 +29,45 @@ const NETWORK_KIND_LABEL = "io.pi-bridge.kind";
 const PROJECT_LABEL = "io.pi-bridge.project";
 const WORKSPACE_LABEL = "io.pi-bridge.workspace";
 const NETWORK_KIND_VALUE = "workspace-capability-network";
-const KNOWN_WORKSPACE_CAPABILITIES: WorkspaceCapabilityName[] = ["pdfApi"];
-const PDF_API_ALIAS = "pdf-api";
+
+const CAPABILITY_CONFIG: Record<WorkspaceCapabilityName, { containerSuffix: string; alias: string }> = {
+  pdfApi: {
+    containerSuffix: "pdf-api",
+    alias: "pdf-api",
+  },
+  spreadsheetRecalc: {
+    containerSuffix: "spreadsheet-recalc",
+    alias: "spreadsheet-recalc",
+  },
+};
+
+const KNOWN_WORKSPACE_CAPABILITIES = Object.keys(CAPABILITY_CONFIG) as WorkspaceCapabilityName[];
 
 export function defaultWorkspaceCapabilitiesRecord(): WorkspaceCapabilitiesRecord {
   return {
     pdfApi: { enabled: false },
+    spreadsheetRecalc: { enabled: false },
   };
 }
 
-export function normalizeWorkspaceCapabilitiesRecord(value: unknown): WorkspaceCapabilitiesRecord | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const raw = value as Record<string, unknown>;
+export function normalizeWorkspaceCapabilitiesRecord(value: unknown): WorkspaceCapabilitiesRecord {
+  const raw = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
   return {
     pdfApi: normalizeCapabilityToggleRecord(raw["pdfApi"]) ?? { enabled: false },
+    spreadsheetRecalc: normalizeCapabilityToggleRecord(raw["spreadsheetRecalc"]) ?? { enabled: false },
   };
+}
+
+export function workspaceCapabilitiesShapeComplete(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const raw = value as Record<string, unknown>;
+  return KNOWN_WORKSPACE_CAPABILITIES.every((capability) => capability in raw);
 }
 
 export function enabledWorkspaceCapabilities(capabilities?: WorkspaceCapabilitiesRecord): WorkspaceCapabilityName[] {
@@ -118,17 +143,11 @@ export class WorkspaceCapabilityManager {
   }
 
   capabilityContainerName(capability: WorkspaceCapabilityName): string {
-    switch (capability) {
-      case "pdfApi":
-        return `${this.project}-pdf-api`;
-    }
+    return `${this.project}-${CAPABILITY_CONFIG[capability].containerSuffix}`;
   }
 
   capabilityAlias(capability: WorkspaceCapabilityName): string {
-    switch (capability) {
-      case "pdfApi":
-        return PDF_API_ALIAS;
-    }
+    return CAPABILITY_CONFIG[capability].alias;
   }
 
   private async ensureWorkspaceNetwork(workspaceKey: string, networkName: string): Promise<boolean> {

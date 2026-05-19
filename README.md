@@ -177,6 +177,8 @@ Bridge plus optional capability containers such as `pdf-api`:
 docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d
 ```
 
+Note: some optional capability services in `docker-compose.capabilities.yml` may be commented out by default and must be explicitly uncommented before they are started.
+
 ### 4. What `docker compose up -d --build` rebuilds
 
 This command rebuilds the **Compose-managed images and containers** in this repo, especially the bridge image and the helper images used for future sibling-container creates. If you also use `docker-compose.capabilities.yml`, the same rule applies to those capability containers: Compose owns their lifecycle, while the bridge later attaches them to workspace-specific internal networks as needed.
@@ -252,23 +254,38 @@ Notes:
 
 Capability reachability is also controlled through `workspace.json`.
 
-Current first capability:
+Current capability keys:
 
 ```json
 "capabilities": {
   "pdfApi": {
     "enabled": true
+  },
+  "spreadsheetRecalc": {
+    "enabled": false
   }
 }
 ```
 
 Behavior:
 
-- `capabilities.pdfApi.enabled` is explicit per workspace
-- no extra `.env` surface is needed for the current `pdf-api` capability
-- the capability container itself is optional infrastructure started through `docker-compose.capabilities.yml`
+- `capabilities.pdfApi.enabled` and `capabilities.spreadsheetRecalc.enabled` are explicit per workspace
+- no extra `.env` surface is needed for the current capability containers
+- the capability containers themselves are optional infrastructure started through `docker-compose.capabilities.yml`
 - the bridge does **not** proxy capability requests; the sandbox calls the enabled service directly over an internal Docker network
 - enabling a capability may require a fresh runner / sandbox to pick up the new network attachment (`!reset` for that workspace or `admin-workspace.js reconcile --reset-runners` for inactive workspaces)
+
+Current capabilities:
+
+- `pdfApi` → `http://pdf-api:8000`
+- `spreadsheetRecalc` → `http://spreadsheet-recalc:2004/request`
+
+Important honesty note for `spreadsheetRecalc`:
+
+- the operator-facing capability name is intentionally narrow because the current use case is workbook recalculation after write-back
+- the underlying `unoserver-rest-api` backend is broader than recalculation alone
+- in the current trusted-user posture, that restriction is therefore **soft**, not hard
+- the `spreadsheet-recalc` service block is commented out by default in `docker-compose.capabilities.yml` and must be explicitly uncommented before use
 
 Start the optional capability container stack with:
 

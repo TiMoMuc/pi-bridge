@@ -15,6 +15,25 @@ services:
       io.pi-bridge.capability: "pdf-api"
       io.pi-bridge.project: "${COMPOSE_PROJECT_NAME:-pi-bridge}"
 
+  # Optional spreadsheet recalculation backend.
+  #
+  # This is intentionally commented out by default. The bridge exposes it to
+  # workspaces under the narrow capability name `spreadsheetRecalc` and the
+  # narrow network alias `spreadsheet-recalc`, but the underlying REST API is
+  # broader than recalculation alone. In the current trusted-user model we keep
+  # the implementation lean and document that restriction honestly as soft, not
+  # hard.
+  #
+  # spreadsheet-recalc:
+  #   image: "libreofficedocker/libreoffice-unoserver:3.19"
+  #   container_name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-spreadsheet-recalc"
+  #   restart: unless-stopped
+  #   networks:
+  #     - capabilities-internal
+  #   labels:
+  #     io.pi-bridge.capability: "spreadsheet-recalc"
+  #     io.pi-bridge.project: "${COMPOSE_PROJECT_NAME:-pi-bridge}"
+
 networks:
   capabilities-internal:
     name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-capabilities-internal"

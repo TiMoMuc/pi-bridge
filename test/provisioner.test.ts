@@ -76,7 +76,10 @@ describe("UserProvisioner", () => {
     expect(result.record.codeServer?.port).toBe(18440);
     expect(result.record.calendar?.enabled).toBe(false);
     expect(result.record.boot?.enabled).toBe(true);
-    expect(result.record.capabilities?.pdfApi?.enabled).toBe(false);
+    expect(result.record.capabilities).toEqual({
+      pdfApi: { enabled: false },
+      spreadsheetRecalc: { enabled: false },
+    });
     expect(result.record.experimental).toBeUndefined();
 
     const userDir = path.join(workspaceDir, result.workspaceKey);
@@ -104,7 +107,10 @@ describe("UserProvisioner", () => {
     expect(result.record.codeServer?.password).toBeTruthy();
     expect(result.record.calendar?.token).toBeTruthy();
     expect(result.record.boot).toEqual({ enabled: false });
-    expect(result.record.capabilities).toEqual({ pdfApi: { enabled: false } });
+    expect(result.record.capabilities).toEqual({
+      pdfApi: { enabled: false },
+      spreadsheetRecalc: { enabled: false },
+    });
     expect(result.record.experimental).toBeUndefined();
     expect(result.record.piThinkingLevel).toBe("off");
   });
@@ -122,7 +128,10 @@ describe("UserProvisioner", () => {
     const result = await prov.ensurePendingRequest("signal", "+1777");
     expect(result.record.status).toBe("pending");
     expect(result.record.boot).toEqual({ enabled: false });
-    expect(result.record.capabilities).toEqual({ pdfApi: { enabled: false } });
+    expect(result.record.capabilities).toEqual({
+      pdfApi: { enabled: false },
+      spreadsheetRecalc: { enabled: false },
+    });
   });
 
   it("builds a reverse index lookup for signal and nextcloud bindings", async () => {
@@ -281,14 +290,20 @@ describe("UserProvisioner", () => {
       codeServer?: { enabled?: boolean };
       calendar?: { enabled?: boolean };
       boot?: { enabled?: boolean };
-      capabilities?: { pdfApi?: { enabled?: boolean } };
+      capabilities?: {
+        pdfApi?: { enabled?: boolean };
+        spreadsheetRecalc?: { enabled?: boolean };
+      };
       experimental?: Record<string, unknown>;
     }>;
     expect(raw.ws_a7b3c9?.provisionedAt).toBe("2026-04-08T00:00:00.000Z");
     expect(raw.ws_a7b3c9?.codeServer?.enabled).toBe(false);
     expect(raw.ws_a7b3c9?.calendar?.enabled).toBe(false);
     expect(raw.ws_a7b3c9?.boot).toEqual({ enabled: true });
-    expect(raw.ws_a7b3c9?.capabilities).toEqual({ pdfApi: { enabled: false } });
+    expect(raw.ws_a7b3c9?.capabilities).toEqual({
+      pdfApi: { enabled: false },
+      spreadsheetRecalc: { enabled: false },
+    });
     expect(raw.ws_a7b3c9?.experimental).toBeUndefined();
   });
 
@@ -316,10 +331,16 @@ describe("UserProvisioner", () => {
 
     const raw = JSON.parse(await fs.readFile(path.join(adminDir, "workspace.json"), "utf8")) as Record<string, {
       provisionedAt?: string;
-      capabilities?: { pdfApi?: { enabled?: boolean } };
+      capabilities?: {
+        pdfApi?: { enabled?: boolean };
+        spreadsheetRecalc?: { enabled?: boolean };
+      };
     }>;
     expect(raw.ws_a7b3c9?.provisionedAt).toBeUndefined();
-    expect(raw.ws_a7b3c9?.capabilities).toEqual({ pdfApi: { enabled: false } });
+    expect(raw.ws_a7b3c9?.capabilities).toEqual({
+      pdfApi: { enabled: false },
+      spreadsheetRecalc: { enabled: false },
+    });
 
     await prov.reload();
     expect(prov.getWorkspace("ws_a7b3c9")?.provisionedAt).toBeUndefined();

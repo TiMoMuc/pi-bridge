@@ -24,6 +24,7 @@ import {
 import {
   defaultWorkspaceCapabilitiesRecord,
   normalizeWorkspaceCapabilitiesRecord,
+  workspaceCapabilitiesShapeComplete,
   type WorkspaceCapabilitiesRecord,
 } from "./workspace-capabilities.js";
 import { WorkspaceGitManager } from "./workspace-git.js";
@@ -454,9 +455,8 @@ export class UserProvisioner {
             updated.push(workspaceKey);
           }
         }
-        const normalizedCapabilities = normalizeWorkspaceCapabilitiesRecord(record["capabilities"]);
-        if (!normalizedCapabilities || !normalizedCapabilities.pdfApi) {
-          record["capabilities"] = defaultWorkspaceCapabilitiesRecord();
+        if (!workspaceCapabilitiesShapeComplete(record["capabilities"])) {
+          record["capabilities"] = normalizeWorkspaceCapabilitiesRecord(record["capabilities"]);
           changed = true;
           if (!updated.includes(workspaceKey)) {
             updated.push(workspaceKey);
@@ -633,7 +633,7 @@ function normalizeWorkspaceRecord(record: Record<string, unknown>, workspaceKey?
     codeServer: normalizeCodeServerRecord(record["codeServer"]) ?? { enabled: false },
     calendar: normalizeCalendarRecord(record["calendar"]) ?? { enabled: false },
     boot: normalizeBootRecord(record["boot"]) ?? { enabled: true },
-    capabilities: normalizeWorkspaceCapabilitiesRecord(record["capabilities"]) ?? defaultWorkspaceCapabilitiesRecord(),
+    capabilities: normalizeWorkspaceCapabilitiesRecord(record["capabilities"]),
     experimental: normalizeLegacyExperimentalRecord(record["experimental"]),
     piProvider: normalizeOptionalString(asOptionalString(record["piProvider"])),
     piModel: normalizeOptionalString(asOptionalString(record["piModel"])),

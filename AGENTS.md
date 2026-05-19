@@ -80,9 +80,11 @@ persistent runtime artifacts now live under `BRIDGE_DATA_DIR/admin/`, including
 or replaying, and `outbox/` for pending outbound delivery. Optional workspace
 capabilities now hang off `workspace.json.capabilities`; the bridge manages
 reachability via per-workspace internal Docker networks while the sandbox still
-calls enabled services directly. The agent's in-container cwd defaults to the
-workspace root (`SANDBOX_CWD=.` → `/workspace`) and can be overridden via
-relative `SANDBOX_CWD` values such as `./cowork`.
+calls enabled services directly. Capability names should stay honest and narrow
+(for example `pdfApi`, `spreadsheetRecalc`) even when the backing container is
+broader. The agent's in-container cwd defaults to the workspace root
+(`SANDBOX_CWD=.` → `/workspace`) and can be overridden via relative
+`SANDBOX_CWD` values such as `./cowork`.
 
 ### 5. Dispatch serialization
 One pending `handleMessage` promise per workspace at a time.
@@ -100,7 +102,7 @@ npm run lint         # eslint src test
 npm run check        # typecheck + lint + test — run before every commit
 
 docker compose up --build                           # bridge (runs all configured transports; Signal still uses external signal-cli)
-docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d   # bridge + optional capability containers such as pdf-api
+docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d   # bridge + optional capability containers such as pdf-api (some capability services may stay commented out by default)
 ```
 
 ## File Map

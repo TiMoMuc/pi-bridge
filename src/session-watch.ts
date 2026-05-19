@@ -4,8 +4,25 @@ import type { SessionWatchConfig } from "./config.js";
 import type { UserProvisioner } from "./provisioner.js";
 
 const HEALTH_PATH = "/healthz";
-const WATCH_ROUTE_PREFIX = "/watch";
+export const WATCH_ROUTE_PREFIX = "/watch";
 const HEARTBEAT_MS = 15000;
+
+export function sessionWatchPath(workspaceKey: string, token: string): string {
+  return `${WATCH_ROUTE_PREFIX}/${encodeURIComponent(workspaceKey)}/${encodeURIComponent(token)}`;
+}
+
+export function sessionWatchEventsPath(workspaceKey: string, token: string): string {
+  return `${sessionWatchPath(workspaceKey, token)}/events`;
+}
+
+export function sessionWatchLocalUrl(bindHost: string, port: number, workspaceKey: string, token: string): string {
+  const host = bindHost === "0.0.0.0" ? "localhost" : bindHost;
+  return `http://${host}:${port}${sessionWatchPath(workspaceKey, token)}`;
+}
+
+export function sessionWatchPublicUrl(baseUrl: string, workspaceKey: string, token: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}${sessionWatchPath(workspaceKey, token)}`;
+}
 
 type SessionWatchLevel = "info" | "warn" | "error";
 
@@ -101,7 +118,8 @@ export class SessionWatchServer implements SessionWatchSink {
 
       const eventRoute = parseWatchEventsRoute(pathname);
       if (eventRoute) {
-        if (!this.provisioner.getWorkspace(eventRoute.workspaceKey)) {
+        const workspace = this.provisioner.getWorkspace(eventRoute.workspaceKey);
+        if (!workspace?.sessionWatch?.enabled || !workspace.sessionWatch.token || workspace.sessionWatch.token !== eventRoute.token) {
           res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
           res.end("not found");
           return;
@@ -117,7 +135,8 @@ export class SessionWatchServer implements SessionWatchSink {
         return;
       }
 
-      if (!this.provisioner.getWorkspace(pageRoute.workspaceKey)) {
+      const workspace = this.provisioner.getWorkspace(pageRoute.workspaceKey);
+      if (!workspace?.sessionWatch?.enabled || !workspace.sessionWatch.token || workspace.sessionWatch.token !== pageRoute.token) {
         res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
         res.end("not found");
         return;
@@ -127,7 +146,7 @@ export class SessionWatchServer implements SessionWatchSink {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
       });
-      res.end(renderWatchPage(pageRoute.workspaceKey));
+      res.end(renderWatchPage(pageRoute.workspaceKey, workspace.sessionWatch.token));
     } catch (err) {
       console.error("[session-watch] Request handling failed:", err);
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
@@ -184,36 +203,47 @@ export class SessionWatchServer implements SessionWatchSink {
   }
 }
 
-function parseWatchPageRoute(pathname: string): { workspaceKey: string } | undefined {
+function parseWatchPageRoute(pathname: string): { workspaceKey: string; token: string } | undefined {
   const prefix = `${WATCH_ROUTE_PREFIX}/`;
   if (!pathname.startsWith(prefix)) return undefined;
   const trimmed = pathname.slice(prefix.length);
-  if (!trimmed || trimmed.includes("/")) return undefined;
+  const slash = trimmed.indexOf("/");
+  if (slash === -1) return undefined;
+  const workspaceKeyPart = trimmed.slice(0, slash);
+  const tokenPart = trimmed.slice(slash + 1);
+  if (!workspaceKeyPart || !tokenPart || tokenPart.includes("/")) return undefined;
   try {
-    const workspaceKey = decodeURIComponent(trimmed);
-    return workspaceKey ? { workspaceKey } : undefined;
+    const workspaceKey = decodeURIComponent(workspaceKeyPart);
+    const token = decodeURIComponent(tokenPart);
+    return workspaceKey && token ? { workspaceKey, token } : undefined;
   } catch {
     return undefined;
   }
 }
 
-function parseWatchEventsRoute(pathname: string): { workspaceKey: string } | undefined {
+function parseWatchEventsRoute(pathname: string): { workspaceKey: string; token: string } | undefined {
   const suffix = "/events";
   const prefix = `${WATCH_ROUTE_PREFIX}/`;
   if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
   const trimmed = pathname.slice(prefix.length, -suffix.length);
-  if (!trimmed || trimmed.includes("/")) return undefined;
+  const slash = trimmed.indexOf("/");
+  if (slash === -1) return undefined;
+  const workspaceKeyPart = trimmed.slice(0, slash);
+  const tokenPart = trimmed.slice(slash + 1);
+  if (!workspaceKeyPart || !tokenPart || tokenPart.includes("/")) return undefined;
   try {
-    const workspaceKey = decodeURIComponent(trimmed);
-    return workspaceKey ? { workspaceKey } : undefined;
+    const workspaceKey = decodeURIComponent(workspaceKeyPart);
+    const token = decodeURIComponent(tokenPart);
+    return workspaceKey && token ? { workspaceKey, token } : undefined;
   } catch {
     return undefined;
   }
 }
 
-function renderWatchPage(workspaceKey: string): string {
+function renderWatchPage(workspaceKey: string, token: string): string {
   const safeWorkspaceKey = escapeHtml(workspaceKey);
   const encodedWorkspaceKey = JSON.stringify(workspaceKey);
+  const encodedToken = JSON.stringify(token);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -412,6 +442,7 @@ function renderWatchPage(workspaceKey: string): string {
   <script>
     (() => {
       const workspaceKey = ${encodedWorkspaceKey};
+      const token = ${encodedToken};
       const streamEl = document.getElementById("stream");
       const emptyStateEl = document.getElementById("empty-state");
       const connectionPillEl = document.getElementById("connection-pill");
@@ -586,7 +617,7 @@ function renderWatchPage(workspaceKey: string): string {
         }
       }
 
-      const source = new EventSource("/watch/" + encodeURIComponent(workspaceKey) + "/events");
+      const source = new EventSource("/watch/" + encodeURIComponent(workspaceKey) + "/" + encodeURIComponent(token) + "/events");
       source.onopen = () => setConnectionState("connected");
       source.onerror = () => setConnectionState("reconnecting");
       source.onmessage = (messageEvent) => {

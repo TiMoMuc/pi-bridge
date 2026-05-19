@@ -32,6 +32,7 @@ function makeConfig(workspaceDir: string): Config {
       image: "pi-bridge-code-server:latest",
       bindHost: "127.0.0.1",
       portStart: 18440,
+      publicUrlTemplate: undefined,
       extensionsMode: "append",
       extensions: ["ms-vscode.live-server"],
     },
@@ -41,6 +42,12 @@ function makeConfig(workspaceDir: string): Config {
       port: 8789,
       publicBaseUrl: undefined,
       refreshInterval: "PT15M",
+    },
+    sessionWatch: {
+      enabled: false,
+      bindHost: "127.0.0.1",
+      port: 8791,
+      publicBaseUrl: undefined,
     },
     workspaceDefaults: {
       codeServerEnabled: false,
@@ -256,7 +263,14 @@ describe("bridge orchestration", () => {
   });
 
   it("renders !status as a workspace dashboard from bridge-owned state", async () => {
+    config.codeServer.publicUrlTemplate = "https://code-{workspaceKey}.example.com/";
     config.calendar.publicBaseUrl = "https://cal.example.com";
+    config.sessionWatch = {
+      enabled: true,
+      bindHost: "0.0.0.0",
+      port: 8791,
+      publicBaseUrl: "https://watch.example.com/base",
+    };
 
     const transport = makeTransport("signal");
     const transportMap = new Map<TransportName, Transport>([["signal", transport]]);
@@ -273,6 +287,7 @@ describe("bridge orchestration", () => {
         label: "my-project",
         codeServer: { enabled: true, password: "abc123xyz", port: 18440 },
         calendar: { enabled: true, token: "feed-token" },
+        sessionWatch: { enabled: true, token: "watch-token" },
       })),
     };
 
@@ -292,14 +307,18 @@ describe("bridge orchestration", () => {
       "+15551234567",
       [
         "Workspace: my-project (ws_a7b3c9)",
+        "Workspace path: users/ws_new",
         "Model: claude-sonnet-4-5 (anthropic) · thinking: high",
         "Session: active · 14 messages",
         "",
-        "Code editor: http://127.0.0.1:18440/",
+        "Code editor: https://code-ws_a7b3c9.example.com/",
         "  Password: abc123xyz",
         "",
         "Calendar subscription:",
         "  https://cal.example.com/calendar/ws_a7b3c9/feed-token.ics",
+        "",
+        "Session watch:",
+        "  https://watch.example.com/base/watch/ws_a7b3c9/watch-token",
       ].join("\n"),
       { target: undefined },
     );
@@ -336,6 +355,7 @@ describe("bridge orchestration", () => {
       "+15551234567",
       [
         "Workspace: projects/acme (ws_a7b3c9)",
+        "Workspace path: projects/acme",
         "Model: gpt-4o (openai) · thinking: minimal",
         "Session: inactive",
       ].join("\n"),

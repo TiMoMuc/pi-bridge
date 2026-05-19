@@ -34,6 +34,7 @@ function makeConfig(workspaceDir: string): Config {
       image: "pi-bridge-code-server:latest",
       bindHost: "127.0.0.1",
       portStart: 18440,
+      publicUrlTemplate: undefined,
       extensionsMode: "append",
       extensions: ["ms-vscode.live-server"],
     },
@@ -43,6 +44,12 @@ function makeConfig(workspaceDir: string): Config {
       port: 8789,
       publicBaseUrl: undefined,
       refreshInterval: "PT15M",
+    },
+    sessionWatch: {
+      enabled: false,
+      bindHost: "127.0.0.1",
+      port: 8791,
+      publicBaseUrl: undefined,
     },
     workspaceDefaults: {
       codeServerEnabled: false,
@@ -82,11 +89,13 @@ describe("workspace-control", () => {
           primaryTransport: "nextcloud",
           codeServer: { enabled: false },
           calendar: { enabled: false },
+          sessionWatch: { enabled: false },
         },
         ws_a1: {
           primaryTransport: "signal",
           codeServer: { enabled: true, password: "secret", port: 18440 },
           calendar: { enabled: true, token: "tok" },
+          sessionWatch: { enabled: true, token: "watch-token" },
           piProvider: "openai",
           piModel: "gpt-4o",
           piThinkingLevel: "minimal",
@@ -105,6 +114,8 @@ describe("workspace-control", () => {
         codeServerReady: true,
         calendarEnabled: true,
         calendarReady: true,
+        sessionWatchEnabled: true,
+        sessionWatchReady: true,
         model: "openai/gpt-4o @ minimal",
       },
       {
@@ -114,6 +125,8 @@ describe("workspace-control", () => {
         codeServerReady: false,
         calendarEnabled: false,
         calendarReady: false,
+        sessionWatchEnabled: false,
+        sessionWatchReady: false,
         model: "(default)/(default) @ (default)",
       },
     ]);
@@ -123,6 +136,7 @@ describe("workspace-control", () => {
     const provisioner = {
       ensureCodeServerAccess: vi.fn(async () => ({ password: "secret", port: 18440 })),
       ensureCalendarAccess: vi.fn(async () => ({ token: "calendar-token" })),
+      ensureSessionWatchAccess: vi.fn(async () => ({ token: "watch-token" })),
     };
     const codeServerManager = {
       ensureRunning: vi.fn(async () => {}),
@@ -147,6 +161,7 @@ describe("workspace-control", () => {
         transports: { signal: { sender: "+15551230001" } },
         codeServer: { enabled: true },
         calendar: { enabled: false },
+        sessionWatch: { enabled: false },
       } as never,
       provisioner: provisioner as never,
       codeServerManager: codeServerManager as never,
@@ -162,11 +177,14 @@ describe("workspace-control", () => {
     );
     expect(codeServerManager.stop).not.toHaveBeenCalled();
     expect(provisioner.ensureCalendarAccess).not.toHaveBeenCalled();
+    expect(provisioner.ensureSessionWatchAccess).not.toHaveBeenCalled();
     expect(result).toEqual({
       codeServerStarted: true,
       codeServerStopped: false,
       calendarPrepared: false,
       calendarRemoved: true,
+      sessionWatchPrepared: false,
+      sessionWatchRemoved: true,
       capabilitiesAttached: ["pdfApi"],
       capabilitiesDetached: [],
       capabilitiesMissing: [],
@@ -191,6 +209,7 @@ describe("workspace-control", () => {
           transports: { signal: { sender: "+15551230001" } },
           codeServer: { enabled: true },
           calendar: { enabled: true },
+          sessionWatch: { enabled: true },
         },
         ws_disabled: {
           status: "active",
@@ -200,6 +219,7 @@ describe("workspace-control", () => {
           transports: { nextcloud: { roomToken: "room-disabled", userWhitelist: [] } },
           codeServer: { enabled: false },
           calendar: { enabled: false },
+          sessionWatch: { enabled: false },
         },
         ws_missing: {
           status: "active",
@@ -209,6 +229,7 @@ describe("workspace-control", () => {
           transports: { signal: { sender: "+15551230003" } },
           codeServer: { enabled: true },
           calendar: { enabled: false },
+          sessionWatch: { enabled: false },
         },
       })),
       getWorkspaceRoot: vi.fn((workspaceKey: string) => {
@@ -219,6 +240,7 @@ describe("workspace-control", () => {
       }),
       ensureCodeServerAccess: vi.fn(async () => ({ password: "secret", port: 18440 })),
       ensureCalendarAccess: vi.fn(async () => ({ token: "calendar-token" })),
+      ensureSessionWatchAccess: vi.fn(async () => ({ token: "watch-token" })),
     };
     const eventsManager = {
       startForUser: vi.fn(),
@@ -275,6 +297,7 @@ describe("workspace-control", () => {
     expect(codeServerManager.stop).toHaveBeenCalledWith("ws_disabled");
     expect(codeServerManager.stop).toHaveBeenCalledWith("ws_missing");
     expect(provisioner.ensureCalendarAccess).toHaveBeenCalledWith("ws_live");
+    expect(provisioner.ensureSessionWatchAccess).toHaveBeenCalledWith("ws_live");
     expect(router.reconcileWorkspacePiSelections).toHaveBeenCalledWith(true);
     expect(result).toEqual({
       shapeUpdated: ["ws_shape"],
@@ -282,6 +305,8 @@ describe("workspace-control", () => {
       codeServerStopped: ["ws_disabled"],
       calendarPrepared: ["ws_live"],
       calendarRemoved: ["ws_disabled"],
+      sessionWatchPrepared: ["ws_live"],
+      sessionWatchRemoved: ["ws_disabled"],
       capabilityAttached: ["ws_live:pdfApi"],
       capabilityDetached: ["ws_disabled:pdfApi"],
       capabilityMissing: [],
@@ -302,6 +327,7 @@ describe("workspace-control", () => {
       transports: { signal: { sender: "+15551230009" } },
       codeServer: { enabled: false },
       calendar: { enabled: false },
+      sessionWatch: { enabled: false },
     };
 
     const provisioner = {
@@ -315,12 +341,14 @@ describe("workspace-control", () => {
           transports: { signal: { sender: "+15551230009" } },
           codeServer: { enabled: false },
           calendar: { enabled: false },
+          sessionWatch: { enabled: false },
         },
       })),
       getWorkspaceRoot: vi.fn(() => missingRoot),
       provisionPendingWorkspace: vi.fn(async () => provisionedRecord),
       ensureCodeServerAccess: vi.fn(async () => ({ password: "secret", port: 18440 })),
       ensureCalendarAccess: vi.fn(async () => ({ token: "calendar-token" })),
+      ensureSessionWatchAccess: vi.fn(async () => ({ token: "watch-token" })),
     };
     const eventsManager = {
       startForUser: vi.fn(),
@@ -376,6 +404,8 @@ describe("workspace-control", () => {
       codeServerStopped: ["ws_b2"],
       calendarPrepared: ["ws_a1"],
       calendarRemoved: [],
+      sessionWatchPrepared: ["ws_a1"],
+      sessionWatchRemoved: [],
       capabilityAttached: ["ws_a1:pdfApi"],
       capabilityDetached: [],
       capabilityMissing: ["ws_b2:pdfApi"],
@@ -389,6 +419,8 @@ describe("workspace-control", () => {
       "codeServerStopped=ws_b2",
       "calendarPrepared=ws_a1",
       "calendarRemoved=none",
+      "sessionWatchPrepared=ws_a1",
+      "sessionWatchRemoved=none",
       "capabilityAttached=ws_a1:pdfApi",
       "capabilityDetached=none",
       "capabilityMissing=ws_b2:pdfApi",

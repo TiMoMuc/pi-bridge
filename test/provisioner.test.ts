@@ -75,6 +75,7 @@ describe("UserProvisioner", () => {
     expect(result.record.codeServer?.password).toBeTruthy();
     expect(result.record.codeServer?.port).toBe(18440);
     expect(result.record.calendar?.enabled).toBe(false);
+    expect(result.record.sessionWatch?.enabled).toBe(false);
     expect(result.record.boot?.enabled).toBe(true);
     expect(result.record.capabilities).toEqual({
       pdfApi: { enabled: false },
@@ -104,6 +105,7 @@ describe("UserProvisioner", () => {
     const result = await prov.ensureProvisioned("signal", "+1999");
     expect(result.record.codeServer?.enabled).toBe(true);
     expect(result.record.calendar?.enabled).toBe(true);
+    expect(result.record.sessionWatch?.enabled).toBe(false);
     expect(result.record.codeServer?.password).toBeTruthy();
     expect(result.record.calendar?.token).toBeTruthy();
     expect(result.record.boot).toEqual({ enabled: false });
@@ -127,6 +129,7 @@ describe("UserProvisioner", () => {
 
     const result = await prov.ensurePendingRequest("signal", "+1777");
     expect(result.record.status).toBe("pending");
+    expect(result.record.sessionWatch).toEqual({ enabled: false });
     expect(result.record.boot).toEqual({ enabled: false });
     expect(result.record.capabilities).toEqual({
       pdfApi: { enabled: false },
@@ -245,6 +248,23 @@ describe("UserProvisioner", () => {
     ).rejects.toThrow();
   });
 
+  it("can enable session-watch access with an opaque token", async () => {
+    const prov = createProvisioner();
+    await prov.initialize();
+
+    const { workspaceKey } = await prov.ensureProvisioned("signal", "+111");
+    expect(prov.getWorkspace(workspaceKey)?.sessionWatch?.enabled).toBe(false);
+
+    await editWorkspaceRecord(workspaceKey, (record) => {
+      const sessionWatch = record["sessionWatch"] as { enabled?: boolean };
+      sessionWatch.enabled = true;
+    });
+    await prov.reload();
+    const sessionWatch = await prov.ensureSessionWatchAccess(workspaceKey);
+    expect(sessionWatch?.enabled).toBe(true);
+    expect(sessionWatch?.token).toBeTruthy();
+  });
+
   it("reads updated workspace metadata live from disk", async () => {
     const prov = createProvisioner();
     await prov.initialize();
@@ -289,6 +309,7 @@ describe("UserProvisioner", () => {
       provisionedAt?: string;
       codeServer?: { enabled?: boolean };
       calendar?: { enabled?: boolean };
+      sessionWatch?: { enabled?: boolean };
       boot?: { enabled?: boolean };
       capabilities?: {
         pdfApi?: { enabled?: boolean };
@@ -299,6 +320,7 @@ describe("UserProvisioner", () => {
     expect(raw.ws_a7b3c9?.provisionedAt).toBe("2026-04-08T00:00:00.000Z");
     expect(raw.ws_a7b3c9?.codeServer?.enabled).toBe(false);
     expect(raw.ws_a7b3c9?.calendar?.enabled).toBe(false);
+    expect(raw.ws_a7b3c9?.sessionWatch?.enabled).toBe(false);
     expect(raw.ws_a7b3c9?.boot).toEqual({ enabled: true });
     expect(raw.ws_a7b3c9?.capabilities).toEqual({
       pdfApi: { enabled: false },
@@ -320,6 +342,7 @@ describe("UserProvisioner", () => {
         transports: { signal: { sender: "+15551234567" } },
         codeServer: { enabled: false },
         calendar: { enabled: false },
+        sessionWatch: { enabled: false },
         boot: { enabled: true },
       },
     }, null, 2));

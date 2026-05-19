@@ -39,6 +39,7 @@ describe("loadConfig", () => {
     delete process.env["CODE_SERVER_IMAGE"];
     delete process.env["CODE_SERVER_BIND_HOST"];
     delete process.env["CODE_SERVER_PORT_START"];
+    delete process.env["CODE_SERVER_PUBLIC_URL_TEMPLATE"];
     delete process.env["CODE_SERVER_EXTENSIONS"];
     delete process.env["CODE_SERVER_EXTENSIONS_MODE"];
     delete process.env["CALENDAR_ENABLED"];
@@ -49,6 +50,7 @@ describe("loadConfig", () => {
     delete process.env["SESSION_WATCH_ENABLED"];
     delete process.env["SESSION_WATCH_HOST"];
     delete process.env["SESSION_WATCH_PORT"];
+    delete process.env["SESSION_WATCH_PUBLIC_BASE_URL"];
     delete process.env["DEFAULT_NEW_WORKSPACE_CODE_SERVER_ENABLED"];
     delete process.env["DEFAULT_NEW_WORKSPACE_CALENDAR_ENABLED"];
     delete process.env["DEFAULT_NEW_WORKSPACE_BOOT_ENABLED"];
@@ -116,6 +118,7 @@ describe("loadConfig", () => {
     expect(c.codeServer.image).toBe(DEFAULT_CODE_SERVER_IMAGE);
     expect(c.codeServer.bindHost).toBe("127.0.0.1");
     expect(c.codeServer.portStart).toBe(18440);
+    expect(c.codeServer.publicUrlTemplate).toBeUndefined();
     expect(c.codeServer.extensionsMode).toBe("append");
     expect(c.codeServer.extensions).toEqual(DEFAULT_CODE_SERVER_EXTENSIONS);
     expect(c.calendar.enabled).toBe(false);
@@ -127,6 +130,7 @@ describe("loadConfig", () => {
       enabled: false,
       bindHost: "127.0.0.1",
       port: 8791,
+      publicBaseUrl: undefined,
     });
     expect(c.workspaceDefaults).toEqual({
       codeServerEnabled: false,
@@ -198,6 +202,7 @@ describe("loadConfig", () => {
       image: "custom-code-server:latest",
       bindHost: "0.0.0.0",
       portStart: 20000,
+      publicUrlTemplate: undefined,
       extensionsMode: "append",
       extensions: [...DEFAULT_CODE_SERVER_EXTENSIONS, "ms-python.python"],
     });
@@ -281,6 +286,7 @@ describe("loadConfig", () => {
     process.env["SESSION_WATCH_ENABLED"] = "true";
     process.env["SESSION_WATCH_HOST"] = "0.0.0.0";
     process.env["SESSION_WATCH_PORT"] = "19002";
+    process.env["SESSION_WATCH_PUBLIC_BASE_URL"] = "https://watch.example.com/base/";
     process.env["DEFAULT_NEW_WORKSPACE_CODE_SERVER_ENABLED"] = "true";
     process.env["DEFAULT_NEW_WORKSPACE_CALENDAR_ENABLED"] = "true";
     process.env["DEFAULT_NEW_WORKSPACE_BOOT_ENABLED"] = "false";
@@ -297,12 +303,23 @@ describe("loadConfig", () => {
       enabled: true,
       bindHost: "0.0.0.0",
       port: 19002,
+      publicBaseUrl: "https://watch.example.com/base",
     });
     expect(config.workspaceDefaults).toEqual({
       codeServerEnabled: true,
       calendarEnabled: true,
       bootEnabled: false,
     });
+  });
+
+  it("reads code-server public URL templates", () => {
+    process.env["CODE_SERVER_PUBLIC_URL_TEMPLATE"] = "https://code-{workspaceKey}.example.com:{port}/";
+    expect(loadConfig().codeServer.publicUrlTemplate).toBe("https://code-{workspaceKey}.example.com:{port}/");
+  });
+
+  it("rejects invalid CODE_SERVER_PUBLIC_URL_TEMPLATE placeholders", () => {
+    process.env["CODE_SERVER_PUBLIC_URL_TEMPLATE"] = "https://code.example.com/{workspacePath}";
+    expect(() => loadConfig()).toThrow("CODE_SERVER_PUBLIC_URL_TEMPLATE placeholder");
   });
 
   it("throws on invalid CODE_SERVER_EXTENSIONS_MODE", () => {

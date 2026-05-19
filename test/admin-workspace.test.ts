@@ -40,6 +40,12 @@ function makeConfig(workspaceDir: string, blueprintDir: string): Config {
       publicBaseUrl: "https://cal.mitra-labs.ai",
       refreshInterval: "PT15M",
     },
+    sessionWatch: {
+      enabled: false,
+      bindHost: "127.0.0.1",
+      port: 8791,
+      publicBaseUrl: undefined,
+    },
     workspaceDefaults: {
       codeServerEnabled: false,
       calendarEnabled: false,

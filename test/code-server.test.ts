@@ -6,6 +6,8 @@ import {
   CodeServerManager,
   codeServerContainerName,
   codeServerLocalUrl,
+  codeServerPublicUrl,
+  codeServerStatusUrl,
   codeServerWorkspaceMountPath,
   codeServerStatePaths,
 } from "../src/code-server.js";
@@ -15,9 +17,18 @@ describe("code-server helpers", () => {
     expect(codeServerContainerName("signal_+15551234567")).toBe("code-server-signal_-15551234567");
   });
 
-  it("formats local URLs", () => {
+  it("formats local and public URLs", () => {
     expect(codeServerLocalUrl("127.0.0.1", 18440)).toBe("http://127.0.0.1:18440/");
     expect(codeServerLocalUrl("0.0.0.0", 18440)).toBe("http://localhost:18440/");
+    expect(codeServerPublicUrl("https://code-{workspaceKey}.example.com/", "ws_a7b3c9", 18440)).toBe(
+      "https://code-ws_a7b3c9.example.com/",
+    );
+    expect(codeServerStatusUrl({ bindHost: "0.0.0.0", publicUrlTemplate: undefined }, "ws_a7b3c9", 18440)).toBe(
+      "http://localhost:18440/",
+    );
+    expect(codeServerStatusUrl({ bindHost: "127.0.0.1", publicUrlTemplate: "https://dev.example.com:{port}/" }, "ws_a7b3c9", 18440)).toBe(
+      "https://dev.example.com:18440/",
+    );
   });
 
   it("resolves workspace mount path", () => {

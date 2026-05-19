@@ -54,6 +54,11 @@ export interface CalendarRecord {
   name?: string;
 }
 
+export interface SessionWatchRecord {
+  enabled: boolean;
+  token?: string;
+}
+
 interface BootRecord {
   enabled: boolean;
 }
@@ -74,6 +79,7 @@ export interface WorkspaceRecord {
   }>;
   codeServer?: CodeServerRecord;
   calendar?: CalendarRecord;
+  sessionWatch?: SessionWatchRecord;
   boot?: BootRecord;
   capabilities?: WorkspaceCapabilitiesRecord;
   /** Preserved for legacy workspace.json compatibility; ignored by current runtime. */
@@ -249,6 +255,9 @@ export class UserProvisioner {
         calendar: {
           enabled: false,
         },
+        sessionWatch: {
+          enabled: false,
+        },
         boot: defaultNewWorkspaceBootRecord(this.options.workspaceDefaults),
         capabilities: defaultWorkspaceCapabilitiesRecord(),
         piProvider: this.options.modelDefaults?.provider,
@@ -309,6 +318,9 @@ export class UserProvisioner {
         },
         calendar: {
           enabled: options.defaultCalendarEnabled ?? this.options.workspaceDefaults?.calendarEnabled ?? false,
+        },
+        sessionWatch: {
+          enabled: false,
         },
         boot: defaultNewWorkspaceBootRecord(this.options.workspaceDefaults),
         capabilities: defaultWorkspaceCapabilitiesRecord(),
@@ -394,6 +406,20 @@ export class UserProvisioner {
     return finalRecord ? { ...finalRecord } : undefined;
   }
 
+  async ensureSessionWatchAccess(workspaceKey: string): Promise<SessionWatchRecord | undefined> {
+    await this.initialize();
+
+    let finalRecord: SessionWatchRecord | undefined;
+    await this.withRegistryLock(async () => {
+      const record = this.registry[workspaceKey];
+      if (!record) return;
+      finalRecord = ensureSessionWatchStateInRegistry(this.registry, workspaceKey);
+      await this.writeRegistryToDisk();
+    });
+
+    return finalRecord ? { ...finalRecord } : undefined;
+  }
+
   async reconcileDesiredStateShape(): Promise<string[]> {
     await this.initialize();
 
@@ -443,6 +469,13 @@ export class UserProvisioner {
         }
         if (!record["calendar"] || typeof record["calendar"] !== "object") {
           record["calendar"] = { enabled: false };
+          changed = true;
+          if (!updated.includes(workspaceKey)) {
+            updated.push(workspaceKey);
+          }
+        }
+        if (!record["sessionWatch"] || typeof record["sessionWatch"] !== "object") {
+          record["sessionWatch"] = { enabled: false };
           changed = true;
           if (!updated.includes(workspaceKey)) {
             updated.push(workspaceKey);
@@ -632,6 +665,7 @@ function normalizeWorkspaceRecord(record: Record<string, unknown>, workspaceKey?
     transports,
     codeServer: normalizeCodeServerRecord(record["codeServer"]) ?? { enabled: false },
     calendar: normalizeCalendarRecord(record["calendar"]) ?? { enabled: false },
+    sessionWatch: normalizeSessionWatchRecord(record["sessionWatch"]) ?? { enabled: false },
     boot: normalizeBootRecord(record["boot"]) ?? { enabled: true },
     capabilities: normalizeWorkspaceCapabilitiesRecord(record["capabilities"]),
     experimental: normalizeLegacyExperimentalRecord(record["experimental"]),
@@ -710,6 +744,15 @@ function normalizeCalendarRecord(value: unknown): CalendarRecord | undefined {
   };
 }
 
+function normalizeSessionWatchRecord(value: unknown): SessionWatchRecord | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  return {
+    enabled: raw["enabled"] === true,
+    token: normalizeOptionalString(asOptionalString(raw["token"])),
+  };
+}
+
 function normalizeBootRecord(value: unknown): BootRecord | undefined {
   if (!value || typeof value !== "object") return undefined;
   const raw = value as Record<string, unknown>;
@@ -785,6 +828,22 @@ function ensureCalendarStateInRegistry(
     workspace.calendar.name = workspace.label ? `${workspace.label} — Workspace Events` : `Workspace Events (${workspaceKey})`;
   }
   return { ...workspace.calendar };
+}
+
+function ensureSessionWatchStateInRegistry(
+  registry: Record<string, WorkspaceRecord>,
+  workspaceKey: string,
+): SessionWatchRecord {
+  const workspace = registry[workspaceKey];
+  if (!workspace) {
+    throw new Error(`Unknown workspace for session-watch access: ${workspaceKey}`);
+  }
+
+  workspace.sessionWatch = workspace.sessionWatch ?? { enabled: false };
+  if (!workspace.sessionWatch.token) {
+    workspace.sessionWatch.token = generateToken();
+  }
+  return { ...workspace.sessionWatch };
 }
 
 function buildReverseIndex(registry: Record<string, WorkspaceRecord>): Map<string, string> {

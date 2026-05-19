@@ -313,6 +313,13 @@ Code-server desired state lives in `workspace.json`:
 }
 ```
 
+Optional deployment-level public URL override in `.env`:
+
+```bash
+CODE_SERVER_PUBLIC_URL_TEMPLATE=https://code-{workspaceKey}.example.com/
+# or: https://dev.example.com:{port}/
+```
+
 Behavior:
 
 - `codeServer.enabled` is explicit per workspace; generated fields stay bridge-owned
@@ -320,6 +327,7 @@ Behavior:
 - startup + explicit reconcile ensure the running code-server containers match `workspace.json`
 - bridge shutdown stops running code-server sibling containers, but does not delete them
 - normal inbound messages do **not** auto-spawn code-server
+- `CODE_SERVER_PUBLIC_URL_TEMPLATE` affects `!status` only; it does not change container/network behavior
 
 After editing `workspace.json`, apply desired state with:
 
@@ -333,7 +341,7 @@ Dry-run summary:
 docker exec <bridge-container> node /app/dist/admin-workspace.js reconcile --check
 ```
 
-Access details are shown in the bridge-owned `!status` dashboard.
+Access details are shown in the workspace-facing `!status` dashboard.
 
 ---
 
@@ -413,7 +421,7 @@ After editing `workspace.json`, apply desired state with:
 docker exec <bridge-container> node /app/dist/admin-workspace.js reconcile
 ```
 
-Access details are shown in the bridge-owned `!status` dashboard.
+Access details are shown in the workspace-facing `!status` dashboard.
 
 For external devices, publish the stable `CALENDAR_HTTP_PORT` through your
 existing Cloudflare tunnel or another HTTPS reverse proxy, then subscribe to
@@ -422,44 +430,53 @@ Do not import it as a local copy.
 
 ---
 
-## Localhost live session watch (MVP)
+## Session watch
 
 The bridge can optionally expose a tiny web page that shows live
 `session.subscribe()` events for a workspace: assistant text deltas, tool
 starts/ends, and a few run-status messages such as compaction or retry.
 
-This is intentionally narrow:
-
-- disabled by default
-- in direct bridge runs, `SESSION_WATCH_HOST` defaults to `127.0.0.1`
-- in this repo's `docker-compose.yml`, `SESSION_WATCH_HOST` defaults to `0.0.0.0`
-  so the published host port can reach the server
-- **live only** — no session-history backfill on page load
-- no `workspace.json` metadata
-- no public URL / reverse proxy model
-- repo-owned copied/adapted styling inspired by pi's HTML export, with **no
-  runtime dependency** on pi internal `export-html` files
-
-Optional `.env` settings for the Compose deployment in this repo:
+Global bridge config lives in `.env`:
 
 ```bash
 SESSION_WATCH_ENABLED=true
 SESSION_WATCH_HOST=0.0.0.0
 SESSION_WATCH_PORT=8791
+SESSION_WATCH_PUBLIC_BASE_URL=https://watch.example.com
 ```
 
-Then open from the same machine:
+Per-workspace metadata lives in `workspace.json`:
 
-```text
-http://127.0.0.1:8791/watch/WORKSPACE_KEY
+```json
+"sessionWatch": {
+  "enabled": true,
+  "token": "random-base64url"
+}
 ```
+
+Behavior:
+
+- `sessionWatch.enabled` is explicit per workspace; the opaque `token` stays bridge-owned
+- `SESSION_WATCH_ENABLED` controls the global HTTP publisher only; it does not override per-workspace desired state
+- the bridge serves `GET /watch/:workspaceKey/:token` and `GET /watch/:workspaceKey/:token/events`
+- `SESSION_WATCH_PUBLIC_BASE_URL` affects `!status` link rendering only; it does not change the listener bind/publish behavior
+- **live only** — no session-history backfill on page load
+- repo-owned copied/adapted styling inspired by pi's HTML export, with **no runtime dependency** on pi internal `export-html` files
+
+After editing `workspace.json`, apply desired state with:
+
+```bash
+docker exec <bridge-container> node /app/dist/admin-workspace.js reconcile
+```
+
+Access details are shown in the workspace-facing `!status` dashboard.
 
 Because the page may expose sensitive tool arguments/results and work in
-progress, keep the published host port local or otherwise restrict access. If
-you want strict localhost-only exposure in Docker, publish the port on
-`127.0.0.1` (for example via the Compose port mapping) rather than binding the
-service to `127.0.0.1` inside the container. If this surface is no longer
-needed, it should be easy to remove entirely.
+progress, keep the published host port local or otherwise restrict access with
+your reverse proxy / tunnel. If you want strict localhost-only exposure in
+Docker, publish the port on `127.0.0.1` (for example via the Compose port
+mapping) rather than binding the service to `127.0.0.1` inside the container.
+If this surface is no longer needed, it should be easy to remove entirely.
 
 ---
 

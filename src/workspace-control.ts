@@ -19,6 +19,8 @@ export interface WorkspaceControlSummaryRow {
   codeServerReady: boolean;
   calendarEnabled: boolean;
   calendarReady: boolean;
+  sessionWatchEnabled: boolean;
+  sessionWatchReady: boolean;
   model: string;
 }
 
@@ -28,6 +30,8 @@ export interface WorkspaceControlReconcileResult {
   codeServerStopped: string[];
   calendarPrepared: string[];
   calendarRemoved: string[];
+  sessionWatchPrepared: string[];
+  sessionWatchRemoved: string[];
   capabilityAttached: string[];
   capabilityDetached: string[];
   capabilityMissing: string[];
@@ -42,6 +46,8 @@ export interface WorkspaceDesiredStateApplyResult {
   codeServerStopped: boolean;
   calendarPrepared: boolean;
   calendarRemoved: boolean;
+  sessionWatchPrepared: boolean;
+  sessionWatchRemoved: boolean;
   capabilitiesAttached: WorkspaceCapabilityName[];
   capabilitiesDetached: WorkspaceCapabilityName[];
   capabilitiesMissing: WorkspaceCapabilityName[];
@@ -60,6 +66,8 @@ export async function summarizeWorkspaceControlState(
       codeServerReady: !!record.codeServer?.password && !!record.codeServer?.port,
       calendarEnabled: record.calendar?.enabled === true,
       calendarReady: !!record.calendar?.token,
+      sessionWatchEnabled: record.sessionWatch?.enabled === true,
+      sessionWatchReady: !!record.sessionWatch?.token,
       model: `${record.piProvider ?? "(default)"}/${record.piModel ?? "(default)"} @ ${record.piThinkingLevel ?? "(default)"}`,
     }));
 }
@@ -77,6 +85,8 @@ export async function applyWorkspaceDesiredState(params: {
     codeServerStopped: false,
     calendarPrepared: false,
     calendarRemoved: false,
+    sessionWatchPrepared: false,
+    sessionWatchRemoved: false,
     capabilitiesAttached: [],
     capabilitiesDetached: [],
     capabilitiesMissing: [],
@@ -103,6 +113,15 @@ export async function applyWorkspaceDesiredState(params: {
     }
   } else {
     result.calendarRemoved = true;
+  }
+
+  if (record.sessionWatch?.enabled) {
+    const sessionWatch = await provisioner.ensureSessionWatchAccess(workspaceKey);
+    if (sessionWatch?.token) {
+      result.sessionWatchPrepared = true;
+    }
+  } else {
+    result.sessionWatchRemoved = true;
   }
 
   const capabilityResult = await capabilityManager.applyWorkspaceCapabilities(workspaceKey, record.capabilities);
@@ -133,6 +152,8 @@ export async function reconcileWorkspaceControlPlane(params: {
   const codeServerStopped: string[] = [];
   const calendarPrepared: string[] = [];
   const calendarRemoved: string[] = [];
+  const sessionWatchPrepared: string[] = [];
+  const sessionWatchRemoved: string[] = [];
   const capabilityAttached: string[] = [];
   const capabilityDetached: string[] = [];
   const capabilityMissing: string[] = [];
@@ -166,6 +187,8 @@ export async function reconcileWorkspaceControlPlane(params: {
         if (applied.codeServerStopped) codeServerStopped.push(workspaceKey);
         if (applied.calendarPrepared) calendarPrepared.push(workspaceKey);
         if (applied.calendarRemoved) calendarRemoved.push(workspaceKey);
+        if (applied.sessionWatchPrepared) sessionWatchPrepared.push(workspaceKey);
+        if (applied.sessionWatchRemoved) sessionWatchRemoved.push(workspaceKey);
         capabilityAttached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesAttached));
         capabilityDetached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesDetached));
         capabilityMissing.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesMissing));
@@ -202,6 +225,8 @@ export async function reconcileWorkspaceControlPlane(params: {
     if (applied.codeServerStopped) codeServerStopped.push(workspaceKey);
     if (applied.calendarPrepared) calendarPrepared.push(workspaceKey);
     if (applied.calendarRemoved) calendarRemoved.push(workspaceKey);
+    if (applied.sessionWatchPrepared) sessionWatchPrepared.push(workspaceKey);
+    if (applied.sessionWatchRemoved) sessionWatchRemoved.push(workspaceKey);
     capabilityAttached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesAttached));
     capabilityDetached.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesDetached));
     capabilityMissing.push(...formatCapabilityChanges(workspaceKey, applied.capabilitiesMissing));
@@ -233,6 +258,8 @@ export async function reconcileWorkspaceControlPlane(params: {
     codeServerStopped,
     calendarPrepared,
     calendarRemoved,
+    sessionWatchPrepared,
+    sessionWatchRemoved,
     capabilityAttached,
     capabilityDetached,
     capabilityMissing,
@@ -252,6 +279,7 @@ export function formatWorkspaceControlSummary(rows: WorkspaceControlSummaryRow[]
     `${row.workspaceKey} (${row.transport})`,
     `  code-server: ${row.codeServerEnabled ? `enabled${row.codeServerReady ? "" : " (needs credentials)"}` : "disabled"}`,
     `  calendar: ${row.calendarEnabled ? `enabled${row.calendarReady ? "" : " (needs token)"}` : "disabled"}`,
+    `  session-watch: ${row.sessionWatchEnabled ? `enabled${row.sessionWatchReady ? "" : " (needs token)"}` : "disabled"}`,
     `  model: ${row.model}`,
   ].join("\n")).join("\n\n");
 }
@@ -263,6 +291,8 @@ export function formatWorkspaceControlReconcileResult(result: WorkspaceControlRe
     `codeServerStopped=${joinOrNone(result.codeServerStopped)}`,
     `calendarPrepared=${joinOrNone(result.calendarPrepared)}`,
     `calendarRemoved=${joinOrNone(result.calendarRemoved)}`,
+    `sessionWatchPrepared=${joinOrNone(result.sessionWatchPrepared)}`,
+    `sessionWatchRemoved=${joinOrNone(result.sessionWatchRemoved)}`,
     `capabilityAttached=${joinOrNone(result.capabilityAttached)}`,
     `capabilityDetached=${joinOrNone(result.capabilityDetached)}`,
     `capabilityMissing=${joinOrNone(result.capabilityMissing)}`,

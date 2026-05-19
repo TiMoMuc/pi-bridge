@@ -26,10 +26,10 @@ import { prepareOutboundChunks, type PreparedOutboundChunk } from "./outbound-de
 import { parseOutboundControl } from "./outbound-control.js";
 import { DurableOutboundQueue } from "./outbox-queue.js";
 import { SandboxManager, sandboxConfigFromEnv, detectHostMount } from "./sandbox.js";
-import { codeServerLocalUrl, CodeServerManager } from "./code-server.js";
+import { codeServerStatusUrl, CodeServerManager } from "./code-server.js";
 import { calendarPublicUrl } from "./calendar.js";
 import { CalendarPublisher } from "./calendar-publisher.js";
-import { SessionWatchServer } from "./session-watch.js";
+import { SessionWatchServer, sessionWatchLocalUrl, sessionWatchPublicUrl } from "./session-watch.js";
 import {
   isUserWhitelisted,
   resolveBridgeContainerIdentifier,
@@ -436,6 +436,7 @@ function formatWorkspaceStatus(params: {
 
   const lines = [
     `Workspace: ${workspaceDisplayName(record, workspaceKey)} (${workspaceKey})`,
+    `Workspace path: ${record.workspacePath}`,
     `Model: ${model} (${provider}) · thinking: ${thinkingLevel}`,
     sessionLine,
   ];
@@ -444,7 +445,7 @@ function formatWorkspaceStatus(params: {
   if (codeServer?.enabled && codeServer.password && codeServer.port) {
     lines.push(
       "",
-      `Code editor: ${codeServerLocalUrl(config.codeServer.bindHost, codeServer.port)}`,
+      `Code editor: ${codeServerStatusUrl(config.codeServer, workspaceKey, codeServer.port)}`,
       `  Password: ${codeServer.password}`,
     );
   }
@@ -459,6 +460,21 @@ function formatWorkspaceStatus(params: {
       "",
       "Calendar subscription:",
       `  ${calendarUrl}`,
+    );
+  }
+
+  if (record.sessionWatch?.enabled) {
+    const sessionWatchUrl = record.sessionWatch.token
+      ? (config.sessionWatch?.enabled
+        ? (config.sessionWatch.publicBaseUrl
+          ? sessionWatchPublicUrl(config.sessionWatch.publicBaseUrl, workspaceKey, record.sessionWatch.token)
+          : sessionWatchLocalUrl(config.sessionWatch.bindHost, config.sessionWatch.port, workspaceKey, record.sessionWatch.token))
+        : "(not configured — set SESSION_WATCH_ENABLED=true)")
+      : "(pending reconcile)";
+    lines.push(
+      "",
+      "Session watch:",
+      `  ${sessionWatchUrl}`,
     );
   }
 

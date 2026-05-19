@@ -66,6 +66,18 @@ export function codeServerLocalUrl(bindHost: string, port: number): string {
   return `http://${host}:${port}/`;
 }
 
+export function codeServerPublicUrl(template: string, workspaceKey: string, port: number): string {
+  return template
+    .replaceAll("{workspaceKey}", encodeURIComponent(workspaceKey))
+    .replaceAll("{port}", String(port));
+}
+
+export function codeServerStatusUrl(config: Pick<CodeServerConfig, "bindHost" | "publicUrlTemplate">, workspaceKey: string, port: number): string {
+  return config.publicUrlTemplate
+    ? codeServerPublicUrl(config.publicUrlTemplate, workspaceKey, port)
+    : codeServerLocalUrl(config.bindHost, port);
+}
+
 export function codeServerWorkspaceMountPath(
   hostProjectsDir: string,
   workspacePath: string,

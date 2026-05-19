@@ -42,6 +42,7 @@ export interface SessionWatchConfig {
   enabled: boolean;
   bindHost: string;
   port: number;
+  publicBaseUrl?: string;
 }
 
 export interface RuntimeIdentityConfig {
@@ -61,6 +62,7 @@ export interface CodeServerConfig {
   image: string;
   bindHost: string;
   portStart: number;
+  publicUrlTemplate?: string;
   extensions: string[];
   extensionsMode: CodeServerExtensionsMode;
 }
@@ -191,6 +193,9 @@ export function loadConfig(): Config {
       image: process.env["CODE_SERVER_IMAGE"] ?? DEFAULT_CODE_SERVER_IMAGE,
       bindHost: process.env["CODE_SERVER_BIND_HOST"] ?? "127.0.0.1",
       portStart: Number(process.env["CODE_SERVER_PORT_START"] ?? "18440"),
+      publicUrlTemplate: normalizeCodeServerPublicUrlTemplate(
+        normalizeOptionalString(process.env["CODE_SERVER_PUBLIC_URL_TEMPLATE"]),
+      ),
       extensionsMode: codeServerExtensionsMode,
       extensions: resolveCodeServerExtensions(
         DEFAULT_CODE_SERVER_EXTENSIONS,
@@ -211,6 +216,7 @@ export function loadConfig(): Config {
       enabled: process.env["SESSION_WATCH_ENABLED"] === "true",
       bindHost: process.env["SESSION_WATCH_HOST"] ?? "127.0.0.1",
       port: Number(process.env["SESSION_WATCH_PORT"] ?? "8791"),
+      publicBaseUrl: normalizeBaseUrl(normalizeOptionalString(process.env["SESSION_WATCH_PUBLIC_BASE_URL"])),
     },
 
     workspaceDefaults: {
@@ -374,6 +380,22 @@ function resolveRuntimeIdentity(
 function normalizeBaseUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return value.replace(/\/+$/, "");
+}
+
+function normalizeCodeServerPublicUrlTemplate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (!/^https?:\/\//i.test(value)) {
+    throw new Error(`Invalid CODE_SERVER_PUBLIC_URL_TEMPLATE value (must start with http:// or https://): ${value}`);
+  }
+
+  const invalidPlaceholders = [...value.matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/g)]
+    .map((match) => match[1])
+    .filter((placeholder) => placeholder !== "port" && placeholder !== "workspaceKey");
+  if (invalidPlaceholders.length > 0) {
+    throw new Error(`Invalid CODE_SERVER_PUBLIC_URL_TEMPLATE placeholder(s): ${invalidPlaceholders.join(", ")}`);
+  }
+
+  return value;
 }
 
 function unique(values: string[]): string[] {

@@ -21,7 +21,7 @@ Options:
   --network <name>          Docker network to use instead of auto-detecting from the bridge
   --user <uid[:gid]>        User for docker exec (default: 0)
   --cwd <path>              Working directory inside the sandbox (default: /workspace)
-  --log <path>              History log path (default: ./bridge-data/admin/sandbox-admin-history.shlog)
+  --log <path>              History log path (default: detected live bridge-data mount, then ./.env BRIDGE_DATA_HOST_DIR, then repo-local bridge-data)
   -h, --help                Show this help
 EOF
 }
@@ -33,7 +33,7 @@ bridge_container="${BRIDGE_CONTAINER_NAME:-pi-bridge}"
 network_name=""
 exec_user="${SANDBOX_ADMIN_USER:-0}"
 exec_cwd="/workspace"
-log_file="${SANDBOX_ADMIN_LOG:-$script_dir/bridge-data/admin/sandbox-admin-history.shlog}"
+log_file="${SANDBOX_ADMIN_LOG:-}"
 attached_here=0
 disconnect_done=0
 disconnect_failed=0
@@ -53,6 +53,49 @@ list_container_networks() {
 
 resolve_bridge_network() {
   list_container_networks "$bridge_container" | grep -Ev '^(host|none)$' | head -n 1
+}
+
+resolve_bridge_data_dest_from_container() {
+  docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$bridge_container" \
+    | awk -F= '$1 == "BRIDGE_DATA_DIR" { print substr($0, index($0, "=") + 1); found=1 } END { if (!found) print "/bridge-data" }'
+}
+
+resolve_bridge_data_host_dir_from_container() {
+  local bridge_data_dest
+  bridge_data_dest="$(resolve_bridge_data_dest_from_container)"
+
+  docker inspect -f '{{range .Mounts}}{{println .Destination "\t" .Source}}{{end}}' "$bridge_container" \
+    | awk -v dest="$bridge_data_dest" '$1 == dest { print $2; exit }'
+}
+
+resolve_bridge_data_host_dir_from_env() {
+  local env_file="$script_dir/.env"
+  [[ -f "$env_file" ]] || return 1
+
+  awk -F= '
+    $0 ~ /^[[:space:]]*#/ { next }
+    $1 == "BRIDGE_DATA_HOST_DIR" {
+      value = substr($0, index($0, "=") + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      gsub(/^"|"$/, "", value)
+      gsub(/^\047|\047$/, "", value)
+      print value
+      exit
+    }
+  ' "$env_file"
+}
+
+resolve_default_log_file() {
+  local bridge_data_host_dir
+  bridge_data_host_dir="$(resolve_bridge_data_host_dir_from_container 2>/dev/null || true)"
+  if [[ -z "$bridge_data_host_dir" ]]; then
+    bridge_data_host_dir="$(resolve_bridge_data_host_dir_from_env || true)"
+  fi
+  if [[ -z "$bridge_data_host_dir" ]]; then
+    bridge_data_host_dir="$script_dir/bridge-data"
+  fi
+
+  printf '%s/admin/sandbox-admin-history.shlog\n' "$bridge_data_host_dir"
 }
 
 container_has_network() {
@@ -113,6 +156,10 @@ done
 if [[ -z "$workspace_key" || -z "$command_text" ]]; then
   usage >&2
   exit 2
+fi
+
+if [[ -z "$log_file" ]]; then
+  log_file="$(resolve_default_log_file)"
 fi
 
 sandbox_container="$(sandbox_container_name "$workspace_key")"

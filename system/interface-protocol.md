@@ -58,8 +58,8 @@ For scheduled work with nothing to report, call `wait()`.
 ## Container Environment
 
 Your tools run inside the sandbox container that currently owns your workspace.
-The default sandbox image is Alpine Linux, so `apk add` is usually the right
-package manager there.
+The default sandbox image is Debian-based Python slim, so `apt-get` is usually
+the right package manager there.
 
 Installed packages persist while the container is running but NOT across container
 rebuilds. Your bind-mounted workspace persists always.

@@ -101,8 +101,15 @@ export interface ExecResult {
   code: number;
 }
 
+export interface ExecBinaryResult {
+  stdout: Buffer;
+  stderr: string;
+  code: number;
+}
+
 export interface Executor {
   exec(command: string, options?: ExecOptions): Promise<ExecResult>;
+  execBinary?(command: string, options?: ExecOptions): Promise<ExecBinaryResult>;
 }
 
 // ============================================================================
@@ -114,6 +121,14 @@ export class DockerExecutor implements Executor {
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return execCommand(
+      "docker",
+      dockerExecArgs(this.container, command, options?.cwd),
+      { timeout: options?.timeout, signal: options?.signal },
+    );
+  }
+
+  async execBinary(command: string, options?: ExecOptions): Promise<ExecBinaryResult> {
+    return execCommandBinary(
       "docker",
       dockerExecArgs(this.container, command, options?.cwd),
       { timeout: options?.timeout, signal: options?.signal },
@@ -582,6 +597,78 @@ function execCommand(
       }
 
       resolve({ stdout, stderr, code: code ?? 0 });
+    });
+  });
+}
+
+function execCommandBinary(
+  cmd: string,
+  args: string[],
+  options?: ExecOptions,
+): Promise<ExecBinaryResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: cmd !== "docker",
+      cwd: options?.cwd,
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    let stderr = "";
+    let timedOut = false;
+
+    const timeoutHandle =
+      options?.timeout && options.timeout > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            killProcess(child.pid!);
+          }, options.timeout * 1000)
+        : undefined;
+
+    const onAbort = () => {
+      if (child.pid) killProcess(child.pid);
+    };
+
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        onAbort();
+      } else {
+        options.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }
+
+    child.stdout?.on("data", (data: Buffer) => {
+      stdoutChunks.push(Buffer.from(data));
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      stderr += data.toString();
+      if (stderr.length > 10 * 1024 * 1024) {
+        stderr = stderr.slice(0, 10 * 1024 * 1024);
+      }
+    });
+
+    child.on("close", (code) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (options?.signal) {
+        options.signal.removeEventListener("abort", onAbort);
+      }
+
+      if (options?.signal?.aborted) {
+        reject(new Error(`${stderr}\nCommand aborted`.trim()));
+        return;
+      }
+
+      if (timedOut) {
+        reject(
+          new Error(
+            `${stderr}\nCommand timed out after ${options?.timeout} seconds`.trim(),
+          ),
+        );
+        return;
+      }
+
+      resolve({ stdout: Buffer.concat(stdoutChunks), stderr, code: code ?? 0 });
     });
   });
 }

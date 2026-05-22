@@ -206,7 +206,102 @@ function pickString(record: Record<string, unknown>, keys: string[]): string | u
 // Docker-backed Operations (delegate tool calls to sandbox container)
 // ============================================================================
 
-function createDockerBashOps(executor: Executor): BashOperations {
+const IMAGE_SNIFF_BYTES = 4100;
+const utf8TextDecoder = new TextDecoder("utf-8", { fatal: true });
+
+function hasNonTextControlChars(text: string): boolean {
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    if (
+      code === 0x7f
+      || (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0b && code !== 0x0c && code !== 0x0d)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function detectSupportedImageMimeType(buffer: Buffer): string | null {
+  if (
+    buffer.length >= 8
+    && buffer[0] === 0x89
+    && buffer[1] === 0x50
+    && buffer[2] === 0x4e
+    && buffer[3] === 0x47
+    && buffer[4] === 0x0d
+    && buffer[5] === 0x0a
+    && buffer[6] === 0x1a
+    && buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+
+  if (buffer.length >= 6) {
+    const gifHeader = buffer.subarray(0, 6).toString("ascii");
+    if (gifHeader === "GIF87a" || gifHeader === "GIF89a") {
+      return "image/gif";
+    }
+  }
+
+  if (
+    buffer.length >= 12
+    && buffer.subarray(0, 4).toString("ascii") === "RIFF"
+    && buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+
+  return null;
+}
+
+function buildSandboxReadCommand(absolutePath: string, maxBytes?: number): string {
+  if (maxBytes === undefined) {
+    return `cat ${shellEscape(absolutePath)}`;
+  }
+
+  return `head -c ${Math.max(0, Math.trunc(maxBytes))} ${shellEscape(absolutePath)}`;
+}
+
+async function readSandboxFileBytes(
+  executor: Executor,
+  absolutePath: string,
+  maxBytes?: number,
+): Promise<Buffer> {
+  // read/edit preflight must keep raw bytes intact until the bridge decides
+  // whether the file is text or an image. Crossing the sandbox boundary through
+  // UTF-8 stdout corrupts binary data and breaks the stock pi tool contract.
+  if (!executor.execBinary) {
+    throw new Error(
+      "Sandbox file reads require executor.execBinary(); file contents must not cross a text boundary.",
+    );
+  }
+
+  const result = await executor.execBinary(buildSandboxReadCommand(absolutePath, maxBytes));
+  if (result.code !== 0) {
+    throw new Error(result.stderr || `Failed to read file: ${absolutePath}`);
+  }
+  return result.stdout;
+}
+
+function assertEditableTextBuffer(buffer: Buffer, absolutePath: string): void {
+  let decoded: string;
+  try {
+    decoded = utf8TextDecoder.decode(buffer);
+  } catch {
+    throw new Error(`Binary files are not supported by edit: ${absolutePath}`);
+  }
+
+  if (hasNonTextControlChars(decoded)) {
+    throw new Error(`Binary files are not supported by edit: ${absolutePath}`);
+  }
+}
+
+export function createDockerBashOps(executor: Executor): BashOperations {
   return {
     exec: async (
       command: string,
@@ -230,32 +325,26 @@ function createDockerBashOps(executor: Executor): BashOperations {
   };
 }
 
-function createDockerReadOps(executor: Executor): ReadOperations {
+export function createDockerReadOps(executor: Executor): ReadOperations {
   return {
-    readFile: async (absolutePath: string): Promise<Buffer> => {
-      const result = await executor.exec(`cat ${shellEscape(absolutePath)}`);
-      if (result.code !== 0) {
-        throw new Error(result.stderr || `Failed to read file: ${absolutePath}`);
-      }
-      return Buffer.from(result.stdout);
-    },
+    readFile: async (absolutePath: string): Promise<Buffer> => readSandboxFileBytes(executor, absolutePath),
     access: async (absolutePath: string): Promise<void> => {
       const result = await executor.exec(`test -r ${shellEscape(absolutePath)}`);
       if (result.code !== 0) {
         throw new Error(`File not accessible: ${absolutePath}`);
       }
     },
+    detectImageMimeType: async (absolutePath: string): Promise<string | null> =>
+      detectSupportedImageMimeType(await readSandboxFileBytes(executor, absolutePath, IMAGE_SNIFF_BYTES)),
   };
 }
 
-function createDockerEditOps(executor: Executor): EditOperations {
+export function createDockerEditOps(executor: Executor): EditOperations {
   return {
     readFile: async (absolutePath: string): Promise<Buffer> => {
-      const result = await executor.exec(`cat ${shellEscape(absolutePath)}`);
-      if (result.code !== 0) {
-        throw new Error(result.stderr || `Failed to read file: ${absolutePath}`);
-      }
-      return Buffer.from(result.stdout);
+      const buffer = await readSandboxFileBytes(executor, absolutePath);
+      assertEditableTextBuffer(buffer, absolutePath);
+      return buffer;
     },
     writeFile: async (absolutePath: string, content: string): Promise<void> => {
       const result = await executor.exec(
@@ -266,7 +355,7 @@ function createDockerEditOps(executor: Executor): EditOperations {
       }
     },
     access: async (absolutePath: string): Promise<void> => {
-      const result = await executor.exec(`test -r ${shellEscape(absolutePath)}`);
+      const result = await executor.exec(`test -r ${shellEscape(absolutePath)} && test -w ${shellEscape(absolutePath)}`);
       if (result.code !== 0) {
         throw new Error(`File not accessible: ${absolutePath}`);
       }
@@ -274,7 +363,7 @@ function createDockerEditOps(executor: Executor): EditOperations {
   };
 }
 
-function createDockerWriteOps(executor: Executor): WriteOperations {
+export function createDockerWriteOps(executor: Executor): WriteOperations {
   return {
     writeFile: async (absolutePath: string, content: string): Promise<void> => {
       const dir = absolutePath.includes("/")

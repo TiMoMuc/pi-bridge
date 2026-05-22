@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -197,6 +198,57 @@ function makeNoopExecutor(): Executor {
   return {
     exec: vi.fn(async () => ({ stdout: "", stderr: "", code: 0 })),
   };
+}
+
+function makeWorkspaceMappedLocalExecutor(workspaceRoot: string): Executor {
+  const mapWorkspace = (value: string | undefined): string | undefined =>
+    value?.replaceAll("/workspace", workspaceRoot);
+
+  return {
+    exec: async (command, options) => runLocalShell(
+      mapWorkspace(command) ?? command,
+      { ...options, cwd: mapWorkspace(options?.cwd) },
+      "text",
+    ) as Promise<{ stdout: string; stderr: string; code: number }>,
+    execBinary: async (command, options) => runLocalShell(
+      mapWorkspace(command) ?? command,
+      { ...options, cwd: mapWorkspace(options?.cwd) },
+      "binary",
+    ) as Promise<{ stdout: Buffer; stderr: string; code: number }>,
+  };
+}
+
+function runLocalShell(
+  command: string,
+  options: {
+    cwd?: string;
+    timeout?: number;
+    signal?: AbortSignal;
+  },
+  mode: "text" | "binary",
+): Promise<{ stdout: string; stderr: string; code: number } | { stdout: Buffer; stderr: string; code: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("sh", ["-c", command], {
+      cwd: options.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    child.on("error", reject);
+    child.stdout?.on("data", (data: Buffer) => stdoutChunks.push(Buffer.from(data)));
+    child.stderr?.on("data", (data: Buffer) => stderrChunks.push(Buffer.from(data)));
+    child.on("close", (code) => {
+      const stdout = Buffer.concat(stdoutChunks);
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (mode === "binary") {
+        resolve({ stdout, stderr, code: code ?? 0 });
+        return;
+      }
+      resolve({ stdout: stdout.toString("utf8"), stderr, code: code ?? 0 });
+    });
+  });
 }
 
 describe("createSenderSession — forceNew flag", () => {
@@ -945,5 +997,51 @@ describe("createSenderSession — ResourceLoader shape", () => {
     await bashTool.execute("call-1", { command: "pwd" }, undefined, undefined, {});
 
     expect(execMock).toHaveBeenCalledWith("pwd", expect.objectContaining({ cwd: "/workspace" }));
+  });
+
+  it("returns image blocks through the session-visible sandbox read override", async () => {
+    const { createSenderSession } = await import("../src/runner.js");
+    const codingAgent = await import("@earendil-works/pi-coding-agent");
+    const createAgentSessionMock = vi.mocked(codingAgent.createAgentSession);
+    const workspaceRoot = path.join(tmpDir, "users", "+10000000000");
+    await fs.copyFile(
+      path.join(process.cwd(), "test", "fixtures", "tool-contract", "sample.png"),
+      path.join(workspaceRoot, "sample.png"),
+    );
+    type ReadTool = {
+      name: string;
+      execute: (
+        toolCallId: string,
+        params: { path: string },
+        signal: AbortSignal | undefined,
+        onUpdate: unknown,
+        ctx: unknown,
+      ) => Promise<{ content?: Array<{ type: string; text?: string }> }>;
+    };
+
+    await createSenderSession("+10000000000", config, {
+      executor: makeWorkspaceMappedLocalExecutor(workspaceRoot),
+    });
+
+    const rawCall = createAgentSessionMock.mock.calls.at(-1)?.[0] as unknown;
+    if (!rawCall || typeof rawCall !== "object") {
+      throw new Error("missing createAgentSession call");
+    }
+    const customTools = (rawCall as { customTools?: unknown }).customTools;
+    if (!Array.isArray(customTools)) {
+      throw new Error("missing custom tools");
+    }
+    const readTool = (customTools as ReadTool[]).find((tool) => tool.name === "read");
+    expect(readTool).toBeDefined();
+    if (!readTool) throw new Error("sandbox read override missing");
+
+    const result = await readTool.execute("call-1", { path: "sample.png" }, undefined, undefined, {}) as {
+      content?: Array<{ type: string; text?: string }>;
+    };
+    const content = Array.isArray(result.content) ? result.content : [];
+
+    expect(content.map((part) => part.type)).toEqual(["text", "image"]);
+    expect(content[0]?.type).toBe("text");
+    expect(content[0]?.text).toContain("Read image file [image/png]");
   });
 });

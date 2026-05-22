@@ -175,6 +175,7 @@ test/
   provisioner.test.ts
   session-log-parser-skill.test.ts
   runner.test.ts
+  sandbox-tool-contract.test.ts
   sandbox.test.ts
   session-router.test.ts
   session-watch.test.ts

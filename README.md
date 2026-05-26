@@ -528,7 +528,7 @@ Remote maintenance can use normal SSH git workflows against the workspace root; 
 
 ### Sandboxing
 
-Tool calls run inside a per-workspace Docker sibling container. Each workspace gets its own sandbox container keyed by the opaque workspace id. The sandbox workspace root is fixed at `/workspace`; `SANDBOX_CWD` is configured relative to that root, so `.` means `/workspace` and `./cowork` would mean `/workspace/cowork`.
+Tool calls run inside a per-workspace Docker sibling container. Each workspace gets its own sandbox container keyed by the opaque workspace id. The sandbox workspace root is fixed at `/workspace`; `SANDBOX_CWD` is configured relative to that root, so `.` means `/workspace` and `./cowork` would mean `/workspace/cowork`. On the first sandbox-backed session creation after bridge startup, the bridge runs a tiny self-check (`pwd` under the configured sandbox cwd) and fails loudly if execution does not resolve inside the sandbox as expected.
 
 ### Prompt architecture
 

@@ -11,7 +11,12 @@ import {
   loadInterfaceProtocols,
   loadTransportInterfaceProtocol,
   resetInterfaceProtocolCache,
+  resetSandboxStartupSelfCheckCache,
 } from "../src/runner.js";
+
+afterEach(() => {
+  resetSandboxStartupSelfCheckCache();
+});
 
 describe("loadConstitution", () => {
   let tmpDir: string;
@@ -381,6 +386,47 @@ describe("createSenderSession — forceNew flag", () => {
 
     expect(createSpy).toHaveBeenCalledTimes(2);
     expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it("runs the sandbox startup self-check for Docker-backed executors", async () => {
+    const { createSenderSession } = await import("../src/runner.js");
+    const { DockerExecutor } = await import("../src/sandbox.js");
+    config.workspaceDefaults.bootEnabled = false;
+
+    const execSpy = vi.spyOn(DockerExecutor.prototype, "exec").mockResolvedValue({
+      stdout: "/workspace\n",
+      stderr: "",
+      code: 0,
+    });
+
+    await createSenderSession("+10000000000", config, {
+      forceNew: true,
+      executor: new DockerExecutor("sandbox-test"),
+    });
+
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.stringContaining("pwd && test -d '/workspace'"),
+      expect.objectContaining({ cwd: "/workspace", timeout: 10 }),
+    );
+  });
+
+  it("fails loudly when the sandbox startup self-check resolves to the wrong cwd", async () => {
+    const { createSenderSession } = await import("../src/runner.js");
+    const { DockerExecutor } = await import("../src/sandbox.js");
+    config.workspaceDefaults.bootEnabled = false;
+
+    vi.spyOn(DockerExecutor.prototype, "exec").mockResolvedValue({
+      stdout: "/app\n",
+      stderr: "",
+      code: 0,
+    });
+
+    await expect(
+      createSenderSession("+10000000000", config, {
+        forceNew: true,
+        executor: new DockerExecutor("sandbox-test"),
+      }),
+    ).rejects.toThrow(/Sandbox startup self-check failed/);
   });
 });
 

@@ -50,7 +50,7 @@ import { enabledTransportNames, resolveSandboxCwd, SANDBOX_WORKSPACE_ROOT, type 
 import { getLogger } from "./logger.js";
 import { LEGACY_BOOT_COMMAND, type WorkspaceRecord } from "./provisioner.js";
 import type { TransportName } from "./transport.js";
-import type { Executor } from "./sandbox.js";
+import { DockerExecutor, type Executor } from "./sandbox.js";
 import type { SessionWatchEvent, SessionWatchSink } from "./session-watch.js";
 import { legacyWorkspacePath, workspacePaths } from "./workspace-paths.js";
 
@@ -448,6 +448,64 @@ function createCustomTools(sandboxCwd: string, executor: Executor): Array<ToolDe
     createWaitTool() as unknown as ToolDefinition<TSchema, unknown>,
     ...createSandboxToolOverrides(sandboxCwd, executor),
   ];
+}
+
+let sandboxStartupSelfCheckPromise: Promise<void> | null = null;
+
+export function resetSandboxStartupSelfCheckCache(): void {
+  sandboxStartupSelfCheckPromise = null;
+}
+
+export async function runSandboxStartupSelfCheck(
+  executor: Executor,
+  sandboxCwd: string,
+): Promise<void> {
+  const result = await executor.exec(
+    `pwd && test -d ${shellEscape(SANDBOX_WORKSPACE_ROOT)} && test -d ${shellEscape(sandboxCwd)}`,
+    { cwd: sandboxCwd, timeout: 10 },
+  );
+
+  const actualCwd = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) ?? "";
+
+  if (result.code !== 0 || actualCwd !== sandboxCwd) {
+    const detail = result.stderr.trim() || result.stdout.trim() || `exit code ${result.code}`;
+    throw new Error(
+      `Sandbox startup self-check failed: expected sandbox cwd ${sandboxCwd}, got ${actualCwd || "<empty>"} (${detail}). `
+      + "Tool execution may not be routed through the sandbox; check session wiring and sandbox executor setup before trusting isolation.",
+    );
+  }
+}
+
+async function ensureSandboxStartupSelfCheck(
+  sender: string,
+  executor: Executor,
+  sandboxCwd: string,
+): Promise<void> {
+  if (!(executor instanceof DockerExecutor)) {
+    return;
+  }
+
+  sandboxStartupSelfCheckPromise ??= (async () => {
+    try {
+      await runSandboxStartupSelfCheck(executor, sandboxCwd);
+      getLogger().info("runner", "sandbox-self-check-passed", `Sandbox startup self-check passed (${sandboxCwd})`, {
+        workspaceKey: sender,
+        sandboxCwd,
+      });
+    } catch (err) {
+      getLogger().error("runner", "sandbox-self-check-failed", "Sandbox startup self-check failed", {
+        workspaceKey: sender,
+        sandboxCwd,
+        error: err,
+      });
+      throw err;
+    }
+  })();
+
+  await sandboxStartupSelfCheckPromise;
 }
 
 function shellEscape(s: string): string {
@@ -951,6 +1009,7 @@ export async function createSenderSession(
 
   const { executor } = options;
   const sandboxCwd = resolveSandboxCwd(config.sandboxCwd);
+  await ensureSandboxStartupSelfCheck(sender, executor, sandboxCwd);
 
   // Try to continue most recent session, or create new
   // Note: SessionManager uses the bridge-side cwd for session file paths.

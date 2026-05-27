@@ -274,6 +274,37 @@ Behavior:
 - the capability containers themselves are optional infrastructure started through `docker-compose.capabilities.yml`
 - the bridge does **not** proxy capability requests; the sandbox calls the enabled service directly over an internal Docker network
 - enabling a capability may require a fresh runner / sandbox to pick up the new network attachment (`!reset` for that workspace or `admin-workspace.js reconcile --reset-runners` for inactive workspaces)
+- when a capability is exposed successfully, the bridge materializes its bundled `SKILL.md` into the workspace under `.bridge/capabilities/<capability>/SKILL.md`; `orient.py` can then discover it through normal `SKILL.md` scanning
+- disabling a capability removes that bridge-managed workspace copy
+
+### Capability container contract (v0)
+
+Each optional capability container is expected to be an explicitly pinned image and to
+bundle one static skill file at:
+
+```text
+/capability/SKILL.md
+```
+
+For v0 there is **no separate manifest**. The bridge validates the bundled skill at
+exposure time and refuses exposure for that capability if the file is missing or invalid.
+
+Required `SKILL.md` frontmatter keys:
+
+```yaml
+---
+name: pdf-api
+description: Short task-oriented description.
+version: 0.1.0
+---
+```
+
+Contract notes:
+
+- only `name`, `description`, and `version` are required in v0
+- the bridge does **not** auto-load the skill into prompt context through the SDK
+- the workspace sees only the bridge-managed copy under `.bridge/`; the running capability service remains separate
+- the live API port is for the capability runtime, not for serving the skill file
 
 Current capabilities:
 
@@ -516,7 +547,7 @@ On first contact in `open` mode, the bridge:
 6. writes explicit per-workspace desired-state blocks for boot, code-server, and calendar defaults
 7. if the new-workspace defaults request it, allocates bridge-owned lazy fields (code-server credentials/port or calendar token/name) and applies the desired state
 
-The current blueprint is deliberately lean: agent-owned notes live under `.agent/`, the shared writable surface is `cowork/`, inbound source material lands in read-only `upload/`, and scheduled event files live in `.events/`. New sessions may preload `.agent/orient.py` output through the per-workspace `boot.enabled` flag in `workspace.json`; new workspace records seed that flag from the `.env` default on first provisioning only. Scheduled workspace events resume the agent through synthetic `read(".events/<file>.json")` tool activity once the workspace already has a session file. Event files are discovered through a reconcile loop over `.events/`, not by trusting a single filesystem edge notification. Before first user activity, immediate and one-shot events are dropped when they fire; periodic files stay on disk and their scheduled occurrences are suppressed until session history exists. `wait()` is now the silent-turn tool. Richer pause semantics and compaction / session renewal remain separate follow-up work.
+The current blueprint is deliberately lean: agent-owned notes live under `.agent/`, the shared writable surface is `cowork/`, inbound source material lands in read-only `upload/`, and scheduled event files live in `.events/`. Bridge-managed runtime artifacts live under `.bridge/`, including session history and any capability-bundled guidance materialized for that workspace under `.bridge/capabilities/`. New sessions may preload `.agent/orient.py` output through the per-workspace `boot.enabled` flag in `workspace.json`; new workspace records seed that flag from the `.env` default on first provisioning only. Scheduled workspace events resume the agent through synthetic `read(".events/<file>.json")` tool activity once the workspace already has a session file. Event files are discovered through a reconcile loop over `.events/`, not by trusting a single filesystem edge notification. Before first user activity, immediate and one-shot events are dropped when they fire; periodic files stay on disk and their scheduled occurrences are suppressed until session history exists. `wait()` is now the silent-turn tool. Richer pause semantics and compaction / session renewal remain separate follow-up work.
 
 ### Bridge-owned workspace git history
 

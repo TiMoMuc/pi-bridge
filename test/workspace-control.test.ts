@@ -133,7 +133,11 @@ describe("workspace-control", () => {
   });
 
   it("applies desired state for one workspace through the shared owner", async () => {
+    const workspaceRoot = path.join(tmpDir, "users", "ws_live");
+    await fs.mkdir(path.join(workspaceRoot, ".bridge"), { recursive: true });
+
     const provisioner = {
+      getWorkspaceRoot: vi.fn(() => workspaceRoot),
       ensureCodeServerAccess: vi.fn(async () => ({ password: "secret", port: 18440 })),
       ensureCalendarAccess: vi.fn(async () => ({ token: "calendar-token" })),
       ensureSessionWatchAccess: vi.fn(async () => ({ token: "watch-token" })),
@@ -168,6 +172,7 @@ describe("workspace-control", () => {
       capabilityManager: capabilityManager as never,
     });
 
+    expect(provisioner.getWorkspaceRoot).toHaveBeenCalledWith("ws_live");
     expect(provisioner.ensureCodeServerAccess).toHaveBeenCalledWith("ws_live");
     expect(codeServerManager.ensureRunning).toHaveBeenCalledWith(
       "ws_live",
@@ -178,6 +183,11 @@ describe("workspace-control", () => {
     expect(codeServerManager.stop).not.toHaveBeenCalled();
     expect(provisioner.ensureCalendarAccess).not.toHaveBeenCalled();
     expect(provisioner.ensureSessionWatchAccess).not.toHaveBeenCalled();
+    expect(capabilityManager.applyWorkspaceCapabilities).toHaveBeenCalledWith(
+      "ws_live",
+      undefined,
+      path.join(workspaceRoot, ".bridge"),
+    );
     expect(result).toEqual({
       codeServerStarted: true,
       codeServerStopped: false,

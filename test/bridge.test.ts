@@ -168,6 +168,7 @@ describe("bridge orchestration", () => {
     const provisioner = {
       lookup: vi.fn(() => undefined),
       getWorkspace: vi.fn(() => undefined),
+      getWorkspaceRoot: vi.fn(() => path.join(config.projectsDir, "users", "ws_new")),
       ensureProvisioned: vi.fn(async () => ({ workspaceKey: "ws_new", record, isNew: true })),
       ensureCodeServerAccess: vi.fn(async () => ({ password: "secret", port: 18440 })),
       ensureCalendarAccess: vi.fn(async () => ({ enabled: true, token: "calendar-token" })),
@@ -197,6 +198,10 @@ describe("bridge orchestration", () => {
       },
     };
 
+    const capabilityManager = {
+      applyWorkspaceCapabilities: vi.fn(async () => ({ attached: [], detached: [], missing: [], networkCreated: false, networkRemoved: false })),
+    };
+
     await handleInboundMessage(
       inbound,
       config,
@@ -204,7 +209,7 @@ describe("bridge orchestration", () => {
       provisioner as never,
       router as never,
       codeServerManager as never,
-      { applyWorkspaceCapabilities: vi.fn(async () => ({ attached: [], detached: [], missing: [], networkCreated: false, networkRemoved: false })) } as never,
+      capabilityManager as never,
       async (...args: unknown[]) => {
         handled = args;
       },
@@ -216,6 +221,7 @@ describe("bridge orchestration", () => {
       defaultCalendarEnabled: false,
       binding: { sender: "+15551234567" },
     });
+    expect(provisioner.getWorkspaceRoot).toHaveBeenCalledWith("ws_new");
     expect(provisioner.ensureCodeServerAccess).toHaveBeenCalledWith("ws_new");
     expect(codeServerManager.ensureRunning).toHaveBeenCalledWith(
       "ws_new",
@@ -224,6 +230,11 @@ describe("bridge orchestration", () => {
       "signal",
     );
     expect(provisioner.ensureCalendarAccess).toHaveBeenCalledWith("ws_new");
+    expect(capabilityManager.applyWorkspaceCapabilities).toHaveBeenCalledWith(
+      "ws_new",
+      undefined,
+      path.join(config.projectsDir, "users", "ws_new", ".bridge"),
+    );
     expect(provisioner.updateLastSeen).toHaveBeenCalledWith("ws_new");
     expect(router.dispatch).toHaveBeenCalledOnce();
     expect(handled[0]).toBe("ws_new");

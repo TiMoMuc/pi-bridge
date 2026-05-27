@@ -17,12 +17,17 @@ describe("orient.py", () => {
     workspaceRoot = path.join(tmpDir, "workspace");
     agentDir = path.join(workspaceRoot, ".agent");
     await fs.mkdir(path.join(agentDir, "skills", "demo-skill"), { recursive: true });
+    await fs.mkdir(path.join(workspaceRoot, ".bridge", "capabilities", "pdfApi"), { recursive: true });
     await fs.mkdir(path.join(workspaceRoot, ".events"), { recursive: true });
     await fs.mkdir(path.join(workspaceRoot, "cowork"), { recursive: true });
     await fs.copyFile("__blueprint__/.agent/orient.py", path.join(agentDir, "orient.py"));
     await fs.writeFile(
       path.join(agentDir, "skills", "demo-skill", "SKILL.md"),
       "---\nname: demo-skill\ndescription: Demo skill description.\n---\n\nUse me when needed.\n",
+    );
+    await fs.writeFile(
+      path.join(workspaceRoot, ".bridge", "capabilities", "pdfApi", "SKILL.md"),
+      "---\nname: pdf-api\ndescription: PDF capability guidance.\nversion: 0.1.0\n---\n\nUse the bundled PDF API when needed.\n",
     );
     await fs.writeFile(
       path.join(workspaceRoot, ".events", "weekly.json"),
@@ -52,6 +57,8 @@ describe("orient.py", () => {
     expect(output).toContain("## Available Skills");
     expect(output).toContain("demo-skill");
     expect(output).toContain(".agent/skills/demo-skill/SKILL.md");
+    expect(output).toContain("pdf-api");
+    expect(output).toContain(".bridge/capabilities/pdfApi/SKILL.md");
     expect(output).not.toContain("## Scheduled Events");
   });
 

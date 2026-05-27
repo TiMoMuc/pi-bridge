@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { getLogger } from "./logger.js";
 import { sanitizeWorkspaceKey } from "./sibling-containers.js";
 
 export type WorkspaceCapabilityName = "pdfApi" | "spreadsheetRecalc";
@@ -29,6 +32,10 @@ const NETWORK_KIND_LABEL = "io.pi-bridge.kind";
 const PROJECT_LABEL = "io.pi-bridge.project";
 const WORKSPACE_LABEL = "io.pi-bridge.workspace";
 const NETWORK_KIND_VALUE = "workspace-capability-network";
+const CAPABILITY_BUNDLE_SOURCE_PATH = "/capability/SKILL.md";
+const WORKSPACE_CAPABILITIES_DIRNAME = "capabilities";
+const CAPABILITY_SKILL_FILENAME = "SKILL.md";
+const REQUIRED_SKILL_FRONTMATTER_KEYS = ["name", "description", "version"] as const;
 
 const CAPABILITY_CONFIG: Record<WorkspaceCapabilityName, { containerSuffix: string; alias: string }> = {
   pdfApi: {
@@ -104,6 +111,7 @@ export class WorkspaceCapabilityManager {
   async applyWorkspaceCapabilities(
     workspaceKey: string,
     capabilities?: WorkspaceCapabilitiesRecord,
+    workspaceBridgeDir?: string,
   ): Promise<WorkspaceCapabilityApplyResult> {
     const enabled = new Set(enabledWorkspaceCapabilities(capabilities));
     const networkName = workspaceCapabilityNetworkName(workspaceKey);
@@ -121,14 +129,23 @@ export class WorkspaceCapabilityManager {
 
     for (const capability of KNOWN_WORKSPACE_CAPABILITIES) {
       if (!enabled.has(capability)) {
+        await this.removeWorkspaceCapabilityArtifacts(capability, workspaceBridgeDir);
         if (await this.disconnectCapabilityFromWorkspace(capability, networkName)) {
           result.detached.push(capability);
         }
         continue;
       }
 
+      const materialized = await this.materializeWorkspaceCapabilitySkill(capability, workspaceBridgeDir, workspaceKey);
+      if (!materialized) {
+        await this.disconnectCapabilityFromWorkspace(capability, networkName);
+        result.missing.push(capability);
+        continue;
+      }
+
       const attached = await this.connectCapabilityToWorkspace(capability, networkName);
       if (attached === "missing") {
+        await this.removeWorkspaceCapabilityArtifacts(capability, workspaceBridgeDir);
         result.missing.push(capability);
       } else if (attached) {
         result.attached.push(capability);
@@ -148,6 +165,81 @@ export class WorkspaceCapabilityManager {
 
   capabilityAlias(capability: WorkspaceCapabilityName): string {
     return CAPABILITY_CONFIG[capability].alias;
+  }
+
+  private async materializeWorkspaceCapabilitySkill(
+    capability: WorkspaceCapabilityName,
+    workspaceBridgeDir: string | undefined,
+    workspaceKey: string,
+  ): Promise<boolean> {
+    if (!workspaceBridgeDir) {
+      getLogger().warn(
+        "workspace-capabilities",
+        "capability-artifact-path-missing",
+        `Cannot materialize ${capability} guidance without a workspace .bridge directory`,
+        { workspaceKey, capability },
+      );
+      return false;
+    }
+
+    const containerName = this.capabilityContainerName(capability);
+    const destinationDir = path.join(workspaceBridgeDir, WORKSPACE_CAPABILITIES_DIRNAME, capability);
+    const destinationPath = path.join(destinationDir, CAPABILITY_SKILL_FILENAME);
+
+    await fs.mkdir(destinationDir, { recursive: true });
+    await fs.rm(destinationPath, { force: true });
+
+    try {
+      await this.execSimpleFn("docker", ["cp", `${containerName}:${CAPABILITY_BUNDLE_SOURCE_PATH}`, destinationPath]);
+    } catch {
+      await this.removeWorkspaceCapabilityArtifacts(capability, workspaceBridgeDir);
+      getLogger().warn(
+        "workspace-capabilities",
+        "capability-skill-missing",
+        `Capability ${capability} is not exposable because ${CAPABILITY_BUNDLE_SOURCE_PATH} is unavailable`,
+        { workspaceKey, capability, containerName },
+      );
+      return false;
+    }
+
+    let skillText = "";
+    try {
+      skillText = await fs.readFile(destinationPath, "utf8");
+    } catch {
+      await this.removeWorkspaceCapabilityArtifacts(capability, workspaceBridgeDir);
+      getLogger().warn(
+        "workspace-capabilities",
+        "capability-skill-unreadable",
+        `Capability ${capability} copied an unreadable bundled skill file`,
+        { workspaceKey, capability, containerName },
+      );
+      return false;
+    }
+
+    const validationError = validateCapabilitySkillFrontmatter(skillText);
+    if (validationError) {
+      await this.removeWorkspaceCapabilityArtifacts(capability, workspaceBridgeDir);
+      getLogger().warn(
+        "workspace-capabilities",
+        "capability-skill-invalid",
+        `Capability ${capability} is not exposable because its bundled skill is invalid: ${validationError}`,
+        { workspaceKey, capability, containerName },
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  private async removeWorkspaceCapabilityArtifacts(
+    capability: WorkspaceCapabilityName,
+    workspaceBridgeDir?: string,
+  ): Promise<void> {
+    if (!workspaceBridgeDir) return;
+    await fs.rm(path.join(workspaceBridgeDir, WORKSPACE_CAPABILITIES_DIRNAME, capability), {
+      recursive: true,
+      force: true,
+    });
   }
 
   private async ensureWorkspaceNetwork(workspaceKey: string, networkName: string): Promise<boolean> {
@@ -269,6 +361,57 @@ function normalizeCapabilityToggleRecord(value: unknown): CapabilityToggleRecord
   return {
     enabled: raw["enabled"] === true,
   };
+}
+
+function validateCapabilitySkillFrontmatter(text: string): string | undefined {
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!match) {
+    return "frontmatter block is missing";
+  }
+
+  const fields = new Map<string, string>();
+  for (const rawLine of match[1].split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const keyValue = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
+    if (!keyValue) {
+      return `frontmatter line is not a simple key/value pair: ${line}`;
+    }
+
+    const [, key, rawValue] = keyValue;
+    if (!REQUIRED_SKILL_FRONTMATTER_KEYS.includes(key as typeof REQUIRED_SKILL_FRONTMATTER_KEYS[number])) {
+      return `unexpected frontmatter key: ${key}`;
+    }
+    if (fields.has(key)) {
+      return `duplicate frontmatter key: ${key}`;
+    }
+
+    const value = stripMatchingQuotes(rawValue.trim());
+    if (!value) {
+      return `frontmatter value is empty for ${key}`;
+    }
+    fields.set(key, value);
+  }
+
+  for (const key of REQUIRED_SKILL_FRONTMATTER_KEYS) {
+    if (!fields.has(key)) {
+      return `frontmatter key is missing: ${key}`;
+    }
+  }
+
+  if (fields.size !== REQUIRED_SKILL_FRONTMATTER_KEYS.length) {
+    return "frontmatter contains unexpected keys";
+  }
+
+  return undefined;
+}
+
+function stripMatchingQuotes(value: string): string {
+  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+    return value.slice(1, -1).trim();
+  }
+  return value;
 }
 
 function execSimple(cmd: string, args: string[]): Promise<string> {

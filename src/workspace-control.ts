@@ -1,10 +1,11 @@
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type { Config } from "./config.js";
 import { CodeServerManager } from "./code-server.js";
 import { UserEventsManager } from "./events-manager.js";
 import type { UserProvisioner, WorkspaceRecord } from "./provisioner.js";
 import { SessionRouter } from "./session-router.js";
-import { legacyWorkspacePath } from "./workspace-paths.js";
+import { legacyWorkspacePath, WORKSPACE_BRIDGE_DIRNAME } from "./workspace-paths.js";
 import {
   resolveSandboxNetworkName,
   type WorkspaceCapabilityName,
@@ -124,7 +125,9 @@ export async function applyWorkspaceDesiredState(params: {
     result.sessionWatchRemoved = true;
   }
 
-  const capabilityResult = await capabilityManager.applyWorkspaceCapabilities(workspaceKey, record.capabilities);
+  const workspaceRoot = provisioner.getWorkspaceRoot(workspaceKey);
+  const workspaceBridgeDir = workspaceRoot ? path.join(workspaceRoot, WORKSPACE_BRIDGE_DIRNAME) : undefined;
+  const capabilityResult = await capabilityManager.applyWorkspaceCapabilities(workspaceKey, record.capabilities, workspaceBridgeDir);
   result.capabilitiesAttached = capabilityResult.attached;
   result.capabilitiesDetached = capabilityResult.detached;
   result.capabilitiesMissing = capabilityResult.missing;

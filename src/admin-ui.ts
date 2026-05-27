@@ -981,7 +981,7 @@ function renderAdminPage(): string {
 
     function parseWhitelist(text) {
       return text
-        .split(/[,\n]/)
+        .split(/[,\\n]/)
         .map((entry) => entry.trim())
         .filter(Boolean);
     }
@@ -1075,14 +1075,14 @@ function renderAdminPage(): string {
       const signalSection = detail.signal
         ? '<div class="card"><h2>Signal binding</h2><div class="binding-grid">'
           + '<div class="field"><label>' + (detail.signal.kind === 'group' ? 'Group ID' : 'Sender') + '</label><input id="signalValue" value="' + escapeAttr(detail.signal.value) + '"></div>'
-          + '<div class="field"><label>User whitelist</label><textarea id="signalWhitelist" placeholder="Comma or newline separated">' + escapeHtml(detail.signal.userWhitelist.join('\n')) + '</textarea></div>'
+          + '<div class="field"><label>User whitelist</label><textarea id="signalWhitelist" placeholder="Comma or newline separated">' + escapeHtml(detail.signal.userWhitelist.join('\\n')) + '</textarea></div>'
           + '</div></div>'
         : '';
 
       const nextcloudSection = detail.nextcloud
         ? '<div class="card"><h2>Nextcloud binding</h2><div class="binding-grid">'
           + '<div class="field"><label>Room token</label><input id="nextcloudRoomToken" value="' + escapeAttr(detail.nextcloud.roomToken) + '"></div>'
-          + '<div class="field"><label>User whitelist</label><textarea id="nextcloudWhitelist" placeholder="Comma or newline separated">' + escapeHtml(detail.nextcloud.userWhitelist.join('\n')) + '</textarea></div>'
+          + '<div class="field"><label>User whitelist</label><textarea id="nextcloudWhitelist" placeholder="Comma or newline separated">' + escapeHtml(detail.nextcloud.userWhitelist.join('\\n')) + '</textarea></div>'
           + '</div></div>'
         : '';
 

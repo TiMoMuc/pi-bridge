@@ -32,7 +32,7 @@ const NETWORK_KIND_LABEL = "io.pi-bridge.kind";
 const PROJECT_LABEL = "io.pi-bridge.project";
 const WORKSPACE_LABEL = "io.pi-bridge.workspace";
 const NETWORK_KIND_VALUE = "workspace-capability-network";
-const CAPABILITY_BUNDLE_SOURCE_PATH = "/capability/SKILL.md";
+const CAPABILITY_BUNDLE_SOURCE_PATH = "/capability/.";
 const WORKSPACE_CAPABILITIES_DIRNAME = "capabilities";
 const CAPABILITY_SKILL_FILENAME = "SKILL.md";
 const REQUIRED_SKILL_FRONTMATTER_KEYS = ["name", "description", "version"] as const;
@@ -136,7 +136,7 @@ export class WorkspaceCapabilityManager {
         continue;
       }
 
-      const materialized = await this.materializeWorkspaceCapabilitySkill(capability, workspaceBridgeDir, workspaceKey);
+      const materialized = await this.materializeWorkspaceCapabilityBundle(capability, workspaceBridgeDir, workspaceKey);
       if (!materialized) {
         await this.disconnectCapabilityFromWorkspace(capability, networkName);
         result.missing.push(capability);
@@ -167,7 +167,7 @@ export class WorkspaceCapabilityManager {
     return CAPABILITY_CONFIG[capability].alias;
   }
 
-  private async materializeWorkspaceCapabilitySkill(
+  private async materializeWorkspaceCapabilityBundle(
     capability: WorkspaceCapabilityName,
     workspaceBridgeDir: string | undefined,
     workspaceKey: string,
@@ -186,16 +186,16 @@ export class WorkspaceCapabilityManager {
     const destinationDir = path.join(workspaceBridgeDir, WORKSPACE_CAPABILITIES_DIRNAME, capability);
     const destinationPath = path.join(destinationDir, CAPABILITY_SKILL_FILENAME);
 
+    await fs.rm(destinationDir, { recursive: true, force: true });
     await fs.mkdir(destinationDir, { recursive: true });
-    await fs.rm(destinationPath, { force: true });
 
     try {
-      await this.execSimpleFn("docker", ["cp", `${containerName}:${CAPABILITY_BUNDLE_SOURCE_PATH}`, destinationPath]);
+      await this.execSimpleFn("docker", ["cp", `${containerName}:${CAPABILITY_BUNDLE_SOURCE_PATH}`, destinationDir]);
     } catch {
       await this.removeWorkspaceCapabilityArtifacts(capability, workspaceBridgeDir);
       getLogger().warn(
         "workspace-capabilities",
-        "capability-skill-missing",
+        "capability-bundle-missing",
         `Capability ${capability} is not exposable because ${CAPABILITY_BUNDLE_SOURCE_PATH} is unavailable`,
         { workspaceKey, capability, containerName },
       );
@@ -209,8 +209,8 @@ export class WorkspaceCapabilityManager {
       await this.removeWorkspaceCapabilityArtifacts(capability, workspaceBridgeDir);
       getLogger().warn(
         "workspace-capabilities",
-        "capability-skill-unreadable",
-        `Capability ${capability} copied an unreadable bundled skill file`,
+        "capability-skill-missing",
+        `Capability ${capability} is not exposable because the copied capability bundle is missing ${CAPABILITY_SKILL_FILENAME}`,
         { workspaceKey, capability, containerName },
       );
       return false;

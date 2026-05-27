@@ -44,7 +44,7 @@ describe("workspace capabilities", () => {
     })).toBe(workspaceCapabilityNetworkName("ws_a7b3c9"));
   });
 
-  it("creates a workspace network, copies bundled guidance, and attaches pdf-api when enabled", async () => {
+  it("creates a workspace network, copies the bundled capability directory, and attaches pdf-api when enabled", async () => {
     const bridgeDir = path.join(tmpDir, "workspace", ".bridge");
     const networks = new Set<string>();
     const containerNetworks = new Map<string, Set<string>>();
@@ -72,8 +72,11 @@ describe("workspace capabilities", () => {
           return `${args[args.length - 1]}\n`;
         }
         if (args[0] === "cp") {
-          expect(args[1]).toBe("pi-bridge-pdf-api:/capability/SKILL.md");
-          await fs.writeFile(args[2], skillText, "utf8");
+          expect(args[1]).toBe("pi-bridge-pdf-api:/capability/.");
+          await fs.mkdir(args[2], { recursive: true });
+          await fs.writeFile(path.join(args[2], "SKILL.md"), skillText, "utf8");
+          await fs.writeFile(path.join(args[2], "reference.md"), "Reference details", "utf8");
+          await fs.writeFile(path.join(args[2], "pdf_api_cli.py"), "print('ok')\n", "utf8");
           return "";
         }
         if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
@@ -113,9 +116,15 @@ describe("workspace capabilities", () => {
     await expect(
       fs.readFile(path.join(bridgeDir, "capabilities", "pdfApi", "SKILL.md"), "utf8"),
     ).resolves.toBe(skillText);
+    await expect(
+      fs.readFile(path.join(bridgeDir, "capabilities", "pdfApi", "reference.md"), "utf8"),
+    ).resolves.toBe("Reference details");
+    await expect(
+      fs.readFile(path.join(bridgeDir, "capabilities", "pdfApi", "pdf_api_cli.py"), "utf8"),
+    ).resolves.toBe("print('ok')\n");
   });
 
-  it("reports pdf-api as missing when the bundled skill cannot be copied", async () => {
+  it("reports pdf-api as missing when the bundled capability directory cannot be copied", async () => {
     const bridgeDir = path.join(tmpDir, "workspace", ".bridge");
     const networks = new Set<string>();
     const containerNetworks = new Map<string, Set<string>>();
@@ -133,7 +142,7 @@ describe("workspace capabilities", () => {
           return `${args[args.length - 1]}\n`;
         }
         if (args[0] === "cp") {
-          throw new Error("missing bundled skill");
+          throw new Error("missing bundled capability directory");
         }
         if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
           return args[3] === "pi-bridge-pdf-api" ? "true\n" : "false\n";
@@ -156,6 +165,7 @@ describe("workspace capabilities", () => {
 
     await fs.mkdir(path.join(bridgeDir, "capabilities", "pdfApi"), { recursive: true });
     await fs.writeFile(path.join(bridgeDir, "capabilities", "pdfApi", "SKILL.md"), "stale", "utf8");
+    await fs.writeFile(path.join(bridgeDir, "capabilities", "pdfApi", "reference.md"), "stale ref", "utf8");
 
     const result = await manager.applyWorkspaceCapabilities("ws_a7b3c9", {
       pdfApi: { enabled: true },
@@ -167,9 +177,10 @@ describe("workspace capabilities", () => {
     expect(networks.has("ws_a7b3c9-net")).toBe(true);
     expect(containerNetworks.get("pi-bridge-pdf-api")).toEqual(new Set(["pi-bridge-capabilities-internal"]));
     await expect(fs.access(path.join(bridgeDir, "capabilities", "pdfApi", "SKILL.md"))).rejects.toThrow();
+    await expect(fs.access(path.join(bridgeDir, "capabilities", "pdfApi", "reference.md"))).rejects.toThrow();
   });
 
-  it("blocks exposure when the bundled skill frontmatter is invalid", async () => {
+  it("blocks exposure when the bundled capability directory contains an invalid skill entrypoint", async () => {
     const bridgeDir = path.join(tmpDir, "workspace", ".bridge");
     const networks = new Set<string>();
     const containerNetworks = new Map<string, Set<string>>();
@@ -197,7 +208,9 @@ describe("workspace capabilities", () => {
           return `${args[args.length - 1]}\n`;
         }
         if (args[0] === "cp") {
-          await fs.writeFile(args[2], invalidSkill, "utf8");
+          await fs.mkdir(args[2], { recursive: true });
+          await fs.writeFile(path.join(args[2], "SKILL.md"), invalidSkill, "utf8");
+          await fs.writeFile(path.join(args[2], "reference.md"), "Reference details", "utf8");
           return "";
         }
         if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
@@ -220,9 +233,10 @@ describe("workspace capabilities", () => {
     expect(result.missing).toEqual(["pdfApi"]);
     expect(containerNetworks.get("pi-bridge-pdf-api")).toEqual(new Set(["pi-bridge-capabilities-internal"]));
     await expect(fs.access(path.join(bridgeDir, "capabilities", "pdfApi", "SKILL.md"))).rejects.toThrow();
+    await expect(fs.access(path.join(bridgeDir, "capabilities", "pdfApi", "reference.md"))).rejects.toThrow();
   });
 
-  it("removes the materialized skill and detaches the capability when disabled", async () => {
+  it("removes the materialized capability directory and detaches the capability when disabled", async () => {
     const bridgeDir = path.join(tmpDir, "workspace", ".bridge");
     const networkName = "ws_a7b3c9-net";
     const networks = new Set<string>([networkName]);
@@ -231,6 +245,7 @@ describe("workspace capabilities", () => {
 
     await fs.mkdir(path.join(bridgeDir, "capabilities", "pdfApi"), { recursive: true });
     await fs.writeFile(path.join(bridgeDir, "capabilities", "pdfApi", "SKILL.md"), "stale", "utf8");
+    await fs.writeFile(path.join(bridgeDir, "capabilities", "pdfApi", "reference.md"), "stale ref", "utf8");
 
     const manager = new WorkspaceCapabilityManager({
       project: "pi-bridge",
@@ -275,6 +290,7 @@ describe("workspace capabilities", () => {
       networkRemoved: true,
     });
     await expect(fs.access(path.join(bridgeDir, "capabilities", "pdfApi", "SKILL.md"))).rejects.toThrow();
+    await expect(fs.access(path.join(bridgeDir, "capabilities", "pdfApi", "reference.md"))).rejects.toThrow();
     expect(containerNetworks.get("pi-bridge-pdf-api")).toEqual(new Set(["pi-bridge-capabilities-internal"]));
   });
 
@@ -306,8 +322,10 @@ describe("workspace capabilities", () => {
           return `${args[args.length - 1]}\n`;
         }
         if (args[0] === "cp") {
-          expect(args[1]).toBe("pi-bridge-spreadsheet-recalc:/capability/SKILL.md");
-          await fs.writeFile(args[2], skillText, "utf8");
+          expect(args[1]).toBe("pi-bridge-spreadsheet-recalc:/capability/.");
+          await fs.mkdir(args[2], { recursive: true });
+          await fs.writeFile(path.join(args[2], "SKILL.md"), skillText, "utf8");
+          await fs.writeFile(path.join(args[2], "reference.md"), "Recalc reference", "utf8");
           return "";
         }
         if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
@@ -348,5 +366,8 @@ describe("workspace capabilities", () => {
     await expect(
       fs.readFile(path.join(bridgeDir, "capabilities", "spreadsheetRecalc", "SKILL.md"), "utf8"),
     ).resolves.toBe(skillText);
+    await expect(
+      fs.readFile(path.join(bridgeDir, "capabilities", "spreadsheetRecalc", "reference.md"), "utf8"),
+    ).resolves.toBe("Recalc reference");
   });
 });

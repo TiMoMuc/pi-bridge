@@ -274,20 +274,28 @@ Behavior:
 - the capability containers themselves are optional infrastructure started through `docker-compose.capabilities.yml`
 - the bridge does **not** proxy capability requests; the sandbox calls the enabled service directly over an internal Docker network
 - enabling a capability may require a fresh runner / sandbox to pick up the new network attachment (`!reset` for that workspace or `admin-workspace.js reconcile --reset-runners` for inactive workspaces)
-- when a capability is exposed successfully, the bridge materializes its bundled `SKILL.md` into the workspace under `.bridge/capabilities/<capability>/SKILL.md`; `orient.py` can then discover it through normal `SKILL.md` scanning
-- disabling a capability removes that bridge-managed workspace copy
+- when a capability is exposed successfully, the bridge materializes its bundled `/capability/` directory into the workspace under `.bridge/capabilities/<capability>/`; `orient.py` can then discover the copied `SKILL.md` through normal scanning
+- disabling a capability removes that bridge-managed workspace bundle
 
 ### Capability container contract (v0)
 
 Each optional capability container is expected to be an explicitly pinned image and to
-bundle one static skill file at:
+bundle one static directory at:
+
+```text
+/capability/
+```
+
+Required entrypoint inside that directory:
 
 ```text
 /capability/SKILL.md
 ```
 
-For v0 there is **no separate manifest**. The bridge validates the bundled skill at
-exposure time and refuses exposure for that capability if the file is missing or invalid.
+Optional siblings may include helper scripts, reference docs, and bundled assets.
+For v0 there is **no separate manifest**. The bridge validates the bundled `SKILL.md`
+at exposure time and refuses exposure for that capability if the entrypoint is missing
+or invalid.
 
 Required `SKILL.md` frontmatter keys:
 
@@ -303,7 +311,7 @@ Contract notes:
 
 - only `name`, `description`, and `version` are required in v0
 - the bridge does **not** auto-load the skill into prompt context through the SDK
-- the workspace sees only the bridge-managed copy under `.bridge/`; the running capability service remains separate
+- the workspace sees only the bridge-managed bundle under `.bridge/`; the running capability service remains separate
 - the live API port is for the capability runtime, not for serving the skill file
 
 Current capabilities:

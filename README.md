@@ -60,6 +60,7 @@ If both Signal and Nextcloud are configured, both start.
 | `PI_PROVIDER` / `PI_MODEL` / `PI_THINKING_LEVEL` | optional | Default provider/model/thinking selection when a workspace has no override |
 | `DEFAULT_NEW_WORKSPACE_BOOT_ENABLED` | optional | First-provisioning default for the per-workspace `boot.enabled` flag written into `workspace.json` |
 | `ADMIN_UI_PORT` / `ADMIN_UI_USER` / `ADMIN_UI_PASSWORD` | optional | Enables the built-in operator UI when both credentials are set; `ADMIN_UI_PORT` chooses the published local port |
+| `ADMIN_UI_PUBLISH_HOST` | optional | Host-side Docker publish address for the admin UI port; keep `127.0.0.1` for localhost-only access or use `0.0.0.0` / a specific LAN IP for other machines |
 | provider credentials | required for selected provider | Authentication via API key env vars or pi OAuth state in `PI_CODING_AGENT_DIR` |
 | `BRIDGE_ACCESS_MODE=open|closed|pending` | optional | Unknown transport bindings auto-provision (`open`), are rejected (`closed`), or create a pending approval request in `workspace.json` (`pending`) |
 
@@ -555,6 +556,7 @@ workspace control plane.
 Global bridge config lives in `.env`:
 
 ```bash
+ADMIN_UI_PUBLISH_HOST=127.0.0.1
 ADMIN_UI_PORT=8792
 ADMIN_UI_USER=operator
 ADMIN_UI_PASSWORD=replace-with-a-long-random-password
@@ -567,7 +569,10 @@ Behavior:
 - `workspace.json` remains canonical; the UI is an editor over the existing control plane, not a second source of truth
 - the UI stays workspace-first: searchable workspace list on the left, one selected workspace on the right
 - current operator actions are exposed in-browser: check, reconcile, reconcile + reset inactive runners, and destructive delete
-- in this repo's Docker Compose file, the port is published on `127.0.0.1` by default even though the in-container listener binds normally for Docker reachability
+- in this repo's Docker Compose file, `ADMIN_UI_PUBLISH_HOST` controls the host-side publish address
+- `ADMIN_UI_PUBLISH_HOST=127.0.0.1` keeps the UI localhost-only on the bridge host
+- set `ADMIN_UI_PUBLISH_HOST=0.0.0.0` (or a specific LAN IP) when other machines on your network should reach the UI directly
+- the in-container listener still binds normally for Docker reachability; changing the host-side publish address is the operator-facing access control knob
 - the current v1 surface keeps `workspacePath` and `status` read-only after a workspace has already been provisioned, because the bridge does not currently implement workspace moves or active→pending lifecycle rewrites through the UI
 
 The UI is intentionally narrow and removable:

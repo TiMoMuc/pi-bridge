@@ -1,6 +1,6 @@
 services:
   pdf-api:
-    image: "ghcr.io/timomuc/pdf-api@sha256:f5aa77340280ee895d0c196ea62cf1bb2da9a8c00a10fe515b638aa0026ce637"
+    image: "ghcr.io/timomuc/pdf-api:v0.2.0"
     container_name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-pdf-api"
     restart: unless-stopped
     healthcheck:
@@ -25,7 +25,7 @@ services:
   # hard.
   #
   # spreadsheet-recalc:
-  #   image: "libreofficedocker/libreoffice-unoserver:3.19"
+  #   image: "ghcr.io/timomuc/spreadsheet-recalc:v0.1.0"
   #   container_name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-spreadsheet-recalc"
   #   restart: unless-stopped
   #   networks:

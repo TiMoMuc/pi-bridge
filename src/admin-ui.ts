@@ -607,6 +607,11 @@ function renderAdminPage(): string {
     button.success { background: #223627; border-color: #3b6d3b; }
     button.danger { background: #3b2323; border-color: #7b3d3d; }
     button.ghost { background: transparent; }
+    button.info-button {
+      min-width: 28px;
+      padding: 8px 0;
+      font-weight: 700;
+    }
     button:disabled { opacity: 0.55; cursor: not-allowed; }
 
     input, select, textarea {
@@ -891,7 +896,8 @@ function renderAdminPage(): string {
               <div class="toolbar-left">
                 <button id="check-state" title="Refresh the current control-plane summary without mutating runtime state.">Check</button>
                 <button id="reconcile" title="Apply current workspace.json desired state across known workspaces.">Reconcile</button>
-                <button id="reconcile-reset" title="Apply desired state and also reset inactive runners whose runtime config drifted.">Reconcile + Reset Inactive Runners</button>
+                <button id="reconcile-reset" title="Apply desired state, then reset affected inactive cached runners into fresh sessions when their runtime shape drifted. Active workspaces are skipped.">Reconcile + Reset Inactive Runners</button>
+                <button id="reconcile-help" class="ghost info-button" title="Rule of thumb:&#10;- Reconcile for metadata and access-surface changes: labels, whitelists, code-server, calendar, session-watch, boot&#10;- Reconcile + Reset Inactive Runners for live runtime-shape changes: provider/model/thinking and capability or network changes like pdfApi or spreadsheetRecalc">i</button>
                 <button id="delete-workspace" class="danger" title="Delete the selected workspace destructively after typed confirmation.">Delete workspace…</button>
               </div>
             </div>

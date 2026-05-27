@@ -254,6 +254,8 @@ describe("workspace-control", () => {
     };
     const eventsManager = {
       startForUser: vi.fn(),
+      knownSenders: vi.fn(() => []),
+      stopForUser: vi.fn(async () => {}),
     };
     const codeServerManager = {
       ensureRunning: vi.fn(async () => {}),
@@ -275,6 +277,7 @@ describe("workspace-control", () => {
       getCachedRunner: vi.fn(() => undefined),
       isActive: vi.fn(() => false),
       reset: vi.fn(async () => {}),
+      retireDeletedWorkspaces: vi.fn(() => []),
       reconcileWorkspacePiSelections: vi.fn(async () => ({
         changed: ["ws_live"],
         reset: ["ws_live"],
@@ -294,6 +297,7 @@ describe("workspace-control", () => {
     });
 
     expect(provisioner.reload).toHaveBeenCalledTimes(2);
+    expect(router.retireDeletedWorkspaces).toHaveBeenCalledWith(["ws_disabled", "ws_live", "ws_missing"]);
     expect(eventsManager.startForUser).toHaveBeenCalledWith("ws_live");
     expect(eventsManager.startForUser).toHaveBeenCalledWith("ws_disabled");
     expect(eventsManager.startForUser).not.toHaveBeenCalledWith("ws_missing");
@@ -362,6 +366,8 @@ describe("workspace-control", () => {
     };
     const eventsManager = {
       startForUser: vi.fn(),
+      knownSenders: vi.fn(() => []),
+      stopForUser: vi.fn(async () => {}),
     };
     const codeServerManager = {
       ensureRunning: vi.fn(async () => {}),
@@ -383,6 +389,7 @@ describe("workspace-control", () => {
       getCachedRunner: vi.fn(() => undefined),
       isActive: vi.fn(() => false),
       reset: vi.fn(async () => {}),
+      retireDeletedWorkspaces: vi.fn(() => []),
       reconcileWorkspacePiSelections: vi.fn(async () => ({
         changed: [],
         reset: [],
@@ -405,6 +412,79 @@ describe("workspace-control", () => {
     expect(eventsManager.startForUser).toHaveBeenCalledWith("ws_pending");
     expect(codeServerManager.stop).toHaveBeenCalledWith("ws_pending");
     expect(result.missingDirs).toEqual([]);
+  });
+
+  it("retires deleted runtime state on reconcile before applying live workspace state", async () => {
+    const liveDir = path.join(tmpDir, "users", "ws_live");
+    await fs.mkdir(liveDir, { recursive: true });
+
+    const provisioner = {
+      reload: vi.fn(async () => {}),
+      reconcileDesiredStateShape: vi.fn(async () => []),
+      listWorkspaces: vi.fn(() => ({
+        ws_live: {
+          status: "active",
+          workspacePath: "users/ws_live",
+          provisionedAt: "2026-01-01T00:00:00.000Z",
+          primaryTransport: "signal",
+          transports: { signal: { sender: "+15551230001" } },
+          codeServer: { enabled: false },
+          calendar: { enabled: false },
+          sessionWatch: { enabled: false },
+        },
+      })),
+      getWorkspaceRoot: vi.fn(() => liveDir),
+      ensureCodeServerAccess: vi.fn(async () => ({ password: "secret", port: 18440 })),
+      ensureCalendarAccess: vi.fn(async () => ({ token: "calendar-token" })),
+      ensureSessionWatchAccess: vi.fn(async () => ({ token: "watch-token" })),
+    };
+    const eventsManager = {
+      startForUser: vi.fn(),
+      knownSenders: vi.fn(() => ["ws_live", "ws_deleted"]),
+      stopForUser: vi.fn(async () => {}),
+    };
+    const codeServerManager = {
+      ensureRunning: vi.fn(async () => {}),
+      stop: vi.fn(async () => {}),
+    };
+    const capabilityManager = {
+      applyWorkspaceCapabilities: vi.fn(async () => ({
+        attached: [],
+        detached: [],
+        missing: [],
+        networkCreated: false,
+        networkRemoved: false,
+      })),
+    };
+    const sandboxManager = {
+      containerUsesExpectedNetwork: vi.fn(async () => true),
+    };
+    const router = {
+      getCachedRunner: vi.fn(() => undefined),
+      isActive: vi.fn(() => false),
+      reset: vi.fn(async () => {}),
+      retireDeletedWorkspaces: vi.fn(() => ["ws_deleted"]),
+      reconcileWorkspacePiSelections: vi.fn(async () => ({
+        changed: [],
+        reset: [],
+        skippedActive: [],
+      })),
+    };
+
+    await reconcileWorkspaceControlPlane({
+      config,
+      provisioner: provisioner as never,
+      eventsManager: eventsManager as never,
+      codeServerManager: codeServerManager as never,
+      capabilityManager: capabilityManager as never,
+      sandboxManager: sandboxManager as never,
+      router: router as never,
+      resetRunners: false,
+    });
+
+    expect(eventsManager.stopForUser).toHaveBeenCalledWith("ws_deleted");
+    expect(router.retireDeletedWorkspaces).toHaveBeenCalledWith(["ws_live"]);
+    expect(eventsManager.startForUser).toHaveBeenCalledWith("ws_live");
   });
 
   it("formats the reconcile result as stable operator-facing text", () => {

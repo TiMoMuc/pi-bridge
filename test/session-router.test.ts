@@ -301,6 +301,45 @@ describe("SessionRouter PI selection", () => {
     releaseResolve();
   });
 
+  it("retires deleted workspaces and skips any queued follow-up dispatches", async () => {
+    const provisioner = {
+      getWorkspace: vi.fn(() => ({
+        primaryTransport: "signal",
+        transports: { signal: { sender: "+15551234567" } },
+      })),
+    };
+    const eventsManager = { startForUser: vi.fn() };
+    const router = new SessionRouter(config, provisioner as never, eventsManager as never, sandboxManager as never, undefined, { createSession });
+
+    await router.getOrCreate("ws_a7b3c9");
+
+    let enteredResolve!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredResolve = resolve;
+    });
+    let releaseResolve!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseResolve = resolve;
+    });
+    const queued = vi.fn(async () => {});
+
+    router.dispatch("ws_a7b3c9", async () => {
+      enteredResolve();
+      await release;
+    });
+    await entered;
+
+    router.dispatch("ws_a7b3c9", queued);
+    expect(router.retireDeletedWorkspaces([])).toEqual(["ws_a7b3c9"]);
+    expect(router.getCachedRunner("ws_a7b3c9")).toBeUndefined();
+
+    releaseResolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(queued).not.toHaveBeenCalled();
+  });
+
   it("creates workspace mount source directories on the bridge path but mounts the host path into Docker", async () => {
     const bridgeProjectsDir = path.join(tmpDir, "bridge-projects");
     const hostProjectsDir = path.join(tmpDir, "host-projects");

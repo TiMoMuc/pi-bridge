@@ -109,6 +109,46 @@ describe("CodeServerManager", () => {
     expect(calls.some(({ args }) => args[0] === "stop" && args[3] === "code-server-ws_f2d8e1")).toBe(true);
   });
 
+  it("destroys a workspace container and removes its persistent state", async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "code-server-destroy-"));
+
+    try {
+      const mgr = new CodeServerManager(
+        {
+          image: "pi-bridge-code-server:latest",
+          bindHost: "127.0.0.1",
+          portStart: 18440,
+          extensionsMode: "append",
+          extensions: ["ms-vscode.live-server"],
+        },
+        "/bridge-projects",
+        tmpDir,
+        {
+          execSimple: async (cmd: string, args: string[]) => {
+            calls.push({ cmd, args });
+            return "";
+          },
+        },
+      );
+
+      await fs.mkdir(path.join(tmpDir, "code-server", "ws_a7b3c9", "config"), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, "code-server", "ws_a7b3c9", "config", "config.yaml"), "ok\n");
+      await fs.mkdir(path.join(tmpDir, "code-server", "ws_a7b3c9", "data"), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, "code-server", "ws_a7b3c9", "data", "state.json"), "{}\n");
+
+      await mgr.destroy("ws_a7b3c9");
+
+      expect(calls).toContainEqual({
+        cmd: "docker",
+        args: ["rm", "-f", "code-server-ws_a7b3c9"],
+      });
+      await expect(fs.access(path.join(tmpDir, "code-server", "ws_a7b3c9"))).rejects.toThrow();
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("recreates an unlabeled matching container so labels become authoritative", async () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "code-server-test-"));

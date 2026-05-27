@@ -164,6 +164,23 @@ describe("UserProvisioner", () => {
     expect(second.workspaceKey).toBe(first.workspaceKey);
   });
 
+  it("deletes a workspace through the provisioner-owned registry path and rebuilds the reverse index", async () => {
+    const prov = createProvisioner();
+    await prov.initialize();
+
+    const removed = await prov.ensureProvisioned("signal", "+111");
+    const retained = await prov.ensureProvisioned("signal", "+222");
+    const deleted = await prov.deleteWorkspace(removed.workspaceKey);
+
+    expect(deleted.workspacePath).toBe(removed.record.workspacePath);
+    expect(prov.getWorkspace(removed.workspaceKey)).toBeUndefined();
+    expect(prov.lookup("signal", "+111")).toBeUndefined();
+    expect(prov.lookup("signal", "+222")).toBe(retained.workspaceKey);
+
+    const registry = JSON.parse(await fs.readFile(path.join(workspaceDir, "admin", "workspace.json"), "utf8")) as Record<string, unknown>;
+    expect(Object.keys(registry)).toEqual([retained.workspaceKey]);
+  });
+
   it("allocates unique code-server ports across workspaces", async () => {
     const prov = createProvisioner();
     await prov.initialize();

@@ -141,6 +141,7 @@ export class SessionRouter {
   private runners = new Map<string, AgentRunner>();
   private queues = new Map<string, Promise<void>>();
   private active = new Set<string>();
+  private retiredWorkspaces = new Set<string>();
   private readonly createSession: typeof createSenderSession;
 
   constructor(
@@ -155,6 +156,7 @@ export class SessionRouter {
   }
 
   async getOrCreate(workspaceKey: string): Promise<AgentRunner> {
+    this.retiredWorkspaces.delete(workspaceKey);
     const existing = this.runners.get(workspaceKey);
     if (existing) return existing;
 
@@ -186,6 +188,10 @@ export class SessionRouter {
   dispatch(workspaceKey: string, fn: () => Promise<void>): void {
     const current = this.queues.get(workspaceKey) ?? Promise.resolve();
     const next = current.then(async () => {
+      if (this.retiredWorkspaces.has(workspaceKey)) {
+        return;
+      }
+
       this.active.add(workspaceKey);
       try {
         await fn();
@@ -198,10 +204,20 @@ export class SessionRouter {
         error: err,
       });
     });
-    this.queues.set(workspaceKey, next);
+    const tracked = next.finally(() => {
+      if (
+        this.retiredWorkspaces.has(workspaceKey)
+        && !this.active.has(workspaceKey)
+        && this.queues.get(workspaceKey) === tracked
+      ) {
+        this.queues.delete(workspaceKey);
+      }
+    });
+    this.queues.set(workspaceKey, tracked);
   }
 
   async reset(workspaceKey: string): Promise<AgentRunner> {
+    this.retiredWorkspaces.delete(workspaceKey);
     this.runners.delete(workspaceKey);
 
     const executor = await this.getExecutor(workspaceKey);
@@ -238,6 +254,28 @@ export class SessionRouter {
 
   isActive(workspaceKey: string): boolean {
     return this.active.has(workspaceKey);
+  }
+
+  retireDeletedWorkspaces(knownWorkspaces: string[]): string[] {
+    const known = new Set(knownWorkspaces);
+    const retired = new Set<string>();
+    for (const workspaceKey of new Set([
+      ...this.runners.keys(),
+      ...this.queues.keys(),
+      ...this.active,
+    ])) {
+      if (known.has(workspaceKey)) {
+        continue;
+      }
+
+      this.retiredWorkspaces.add(workspaceKey);
+      this.runners.delete(workspaceKey);
+      if (!this.active.has(workspaceKey)) {
+        this.queues.delete(workspaceKey);
+      }
+      retired.add(workspaceKey);
+    }
+    return [...retired].sort();
   }
 
   async reconcileWorkspacePiSelections(resetRunners: boolean): Promise<{

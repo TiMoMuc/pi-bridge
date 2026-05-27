@@ -165,6 +165,11 @@ export async function reconcileWorkspaceControlPlane(params: {
   const runnersSkippedActive = new Set<string>();
 
   const workspaces = Object.entries(provisioner.listWorkspaces()).sort(([a], [b]) => a.localeCompare(b));
+  await retireDeletedWorkspaceRuntimeState({
+    knownWorkspaceKeys: workspaces.map(([workspaceKey]) => workspaceKey),
+    eventsManager,
+    router,
+  });
 
   for (const [workspaceKey, record] of workspaces) {
     if (record.status === "pending") {
@@ -342,6 +347,20 @@ async function maybeResetRunnerForCapabilitySurface(params: {
 
 function joinOrNone(values: string[]): string {
   return values.length > 0 ? values.join(", ") : "none";
+}
+
+async function retireDeletedWorkspaceRuntimeState(params: {
+  knownWorkspaceKeys: string[];
+  eventsManager: UserEventsManager;
+  router: SessionRouter;
+}): Promise<void> {
+  const known = new Set(params.knownWorkspaceKeys);
+  for (const workspaceKey of params.eventsManager.knownSenders()) {
+    if (!known.has(workspaceKey)) {
+      await params.eventsManager.stopForUser(workspaceKey);
+    }
+  }
+  params.router.retireDeletedWorkspaces(params.knownWorkspaceKeys);
 }
 
 async function directoryExists(targetPath: string): Promise<boolean> {

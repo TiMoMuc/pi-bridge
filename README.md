@@ -250,6 +250,33 @@ Notes:
 - Nextcloud bindings route by room token, and the bridge may auto-suggest a human-readable `workspacePath` from the room name when provisioning in `open` mode.
 - Pending workspaces stay in the registry and reverse index, but do not provision files or create runners until they are approved and reconciled.
 
+### Destructive admin workspace delete
+
+For a fully destructive operator-only delete, run:
+
+```bash
+docker exec <bridge-container> node /app/dist/admin-workspace.js delete <workspaceKey> --confirm <workspaceKey>
+```
+
+The `--confirm` value must exactly match the workspace key or the command refuses to run.
+Unknown workspace keys fail clearly.
+
+Successful delete means the bridge:
+
+- removes the workspace record from `workspace.json` through the provisioner-owned registry path
+- removes the durable inbox and outbox entries for that workspace
+- tears down sibling runtime state it owns for that workspace, including sandbox / code-server cleanup and workspace capability network detachment
+- removes bridge-owned code-server state for that workspace
+- removes the workspace root under `PROJECTS_DIR/<workspacePath>`
+- sends `SIGHUP` so the running bridge reloads control-plane state
+
+This command is intentionally narrow:
+
+- it is **not** a user-facing chat command
+- it is **not** a soft remove, archive, or tombstone
+- it does **not** ban a sender / group / room binding
+- a future inbound from the same binding may provision a fresh workspace again according to the normal `BRIDGE_ACCESS_MODE` policy, with a new workspace key
+
 ### Optional workspace capabilities
 
 Capability reachability is also controlled through `workspace.json`.

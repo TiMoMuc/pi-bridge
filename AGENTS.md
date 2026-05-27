@@ -115,7 +115,7 @@ system/
   interface-protocol-nextcloud.md Nextcloud addendum — room-bot model, text-only limits
 
 src/
-  admin-workspace.ts    operator CLI — `reconcile [--check] [--reset-runners]` for workspace control-plane apply
+  admin-workspace.ts    operator CLI — `reconcile [--check] [--reset-runners]` plus destructive `delete <workspaceKey> --confirm <workspaceKey>`
   attachments.ts         inbound save/vision prep + outbound attachment validation + sandbox path translation
   bridge.ts              main() — startup orchestration, reverse-index inbound routing, special commands, outbound send path
   bridge-runtime.ts      transport-aware auth/recipient/target helpers + inbound binding-id resolution

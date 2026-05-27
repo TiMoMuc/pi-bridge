@@ -83,4 +83,30 @@ describe("DurableOutboundQueue", () => {
     expect(await queue.list()).toEqual([]);
     expect(send).toHaveBeenCalledTimes(3);
   });
+
+  it("removes all durable entries for one workspace", async () => {
+    const queue = new DurableOutboundQueue(tmpDir, {
+      resolveTransport: () => undefined,
+    });
+
+    await queue.enqueue({
+      correlationId: "out_a",
+      workspaceKey: "ws_a",
+      transportName: "signal",
+      recipient: "+15551234567",
+      chunks: [{ text: "hello", options: { target: "+15551234567" } }],
+    });
+    await queue.enqueue({
+      correlationId: "out_b",
+      workspaceKey: "ws_b",
+      transportName: "signal",
+      recipient: "+15550000000",
+      chunks: [{ text: "world", options: { target: "+15550000000" } }],
+    });
+
+    await queue.deleteWorkspace("ws_a");
+
+    const remaining = await queue.list();
+    expect(remaining.map((entry) => entry.workspaceKey)).toEqual(["ws_b"]);
+  });
 });

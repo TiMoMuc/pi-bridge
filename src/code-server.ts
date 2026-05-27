@@ -219,6 +219,13 @@ export class CodeServerManager {
     this.containers.delete(workspaceKey);
   }
 
+  async destroy(workspaceKey: string): Promise<void> {
+    await this.removeContainer(codeServerContainerName(workspaceKey));
+    this.containers.delete(workspaceKey);
+    const stateRoot = path.dirname(codeServerStatePaths(this.bridgeDataDir, workspaceKey).configDir);
+    await fs.rm(stateRoot, { recursive: true, force: true });
+  }
+
   async stopAll(knownWorkspaces: string[]): Promise<void> {
     const discovered = (await discoverSiblingContainers(this.execSimpleFn, knownWorkspaces))
       .filter((container) => container.role === "code-server" && container.workspaceKey);

@@ -33,6 +33,10 @@ export class DurableIngressQueue {
     await fs.rm(this.entryPath(workspaceKey, id), { force: true });
   }
 
+  async deleteWorkspace(workspaceKey: string): Promise<void> {
+    await fs.rm(path.join(this.rootDir, workspaceKey), { recursive: true, force: true });
+  }
+
   async list(): Promise<PendingInboundEntry[]> {
     const entries = await this.readAll();
     return entries.sort(compareByCreatedAt);

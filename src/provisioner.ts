@@ -349,6 +349,23 @@ export class UserProvisioner {
     });
   }
 
+  async deleteWorkspace(workspaceKey: string): Promise<WorkspaceRecord> {
+    await this.initialize();
+
+    return this.withRegistryLock(async () => {
+      const record = this.registry[workspaceKey];
+      if (!record) {
+        throw new Error(`Unknown workspace: ${workspaceKey}`);
+      }
+
+      const deleted = cloneWorkspaceRecord(record);
+      delete this.registry[workspaceKey];
+      this.reverseIndex = buildReverseIndex(this.registry);
+      await this.writeRegistryToDisk();
+      return deleted;
+    });
+  }
+
   async reprovision(workspaceKey: string): Promise<void> {
     await this.initialize();
     await this.withRegistryLock(async () => {

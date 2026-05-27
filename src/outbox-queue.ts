@@ -81,6 +81,11 @@ export class DurableOutboundQueue {
     await next;
   }
 
+  async deleteWorkspace(workspaceKey: string): Promise<void> {
+    this.chains.delete(workspaceKey);
+    await fs.rm(path.join(this.rootDir, workspaceKey), { recursive: true, force: true });
+  }
+
   private async processEntry(entry: PendingOutboundEntry): Promise<boolean> {
     const logger = getLogger();
     const transport = this.options.resolveTransport(entry.transportName);

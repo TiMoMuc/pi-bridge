@@ -51,4 +51,24 @@ describe("DurableIngressQueue", () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.id).toBe(second.id);
   });
+
+  it("removes all durable entries for one workspace", async () => {
+    const queue = new DurableIngressQueue(tmpDir);
+
+    await queue.enqueue({
+      correlationId: "inbound_a",
+      workspaceKey: "ws_a",
+      message: makeMessage("hello"),
+    });
+    await queue.enqueue({
+      correlationId: "inbound_b",
+      workspaceKey: "ws_b",
+      message: makeMessage("world"),
+    });
+
+    await queue.deleteWorkspace("ws_a");
+
+    const remaining = await queue.list();
+    expect(remaining.map((entry) => entry.workspaceKey)).toEqual(["ws_b"]);
+  });
 });

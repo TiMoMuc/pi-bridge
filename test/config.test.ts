@@ -51,6 +51,9 @@ describe("loadConfig", () => {
     delete process.env["SESSION_WATCH_HOST"];
     delete process.env["SESSION_WATCH_PORT"];
     delete process.env["SESSION_WATCH_PUBLIC_BASE_URL"];
+    delete process.env["ADMIN_UI_PORT"];
+    delete process.env["ADMIN_UI_USER"];
+    delete process.env["ADMIN_UI_PASSWORD"];
     delete process.env["DEFAULT_NEW_WORKSPACE_CODE_SERVER_ENABLED"];
     delete process.env["DEFAULT_NEW_WORKSPACE_CALENDAR_ENABLED"];
     delete process.env["DEFAULT_NEW_WORKSPACE_BOOT_ENABLED"];
@@ -132,6 +135,7 @@ describe("loadConfig", () => {
       port: 8791,
       publicBaseUrl: undefined,
     });
+    expect(c.adminUi).toBeUndefined();
     expect(c.workspaceDefaults).toEqual({
       codeServerEnabled: false,
       calendarEnabled: false,
@@ -287,6 +291,9 @@ describe("loadConfig", () => {
     process.env["SESSION_WATCH_HOST"] = "0.0.0.0";
     process.env["SESSION_WATCH_PORT"] = "19002";
     process.env["SESSION_WATCH_PUBLIC_BASE_URL"] = "https://watch.example.com/base/";
+    process.env["ADMIN_UI_PORT"] = "19003";
+    process.env["ADMIN_UI_USER"] = "operator";
+    process.env["ADMIN_UI_PASSWORD"] = "secret";
     process.env["DEFAULT_NEW_WORKSPACE_CODE_SERVER_ENABLED"] = "true";
     process.env["DEFAULT_NEW_WORKSPACE_CALENDAR_ENABLED"] = "true";
     process.env["DEFAULT_NEW_WORKSPACE_BOOT_ENABLED"] = "false";
@@ -305,11 +312,22 @@ describe("loadConfig", () => {
       port: 19002,
       publicBaseUrl: "https://watch.example.com/base",
     });
+    expect(config.adminUi).toEqual({
+      bindHost: "0.0.0.0",
+      port: 19003,
+      username: "operator",
+      password: "secret",
+    });
     expect(config.workspaceDefaults).toEqual({
       codeServerEnabled: true,
       calendarEnabled: true,
       bootEnabled: false,
     });
+  });
+
+  it("requires ADMIN_UI_USER and ADMIN_UI_PASSWORD together", () => {
+    process.env["ADMIN_UI_USER"] = "operator";
+    expect(() => loadConfig()).toThrow("ADMIN_UI_USER and ADMIN_UI_PASSWORD must be set together");
   });
 
   it("reads code-server public URL templates", () => {

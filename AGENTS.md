@@ -115,6 +115,7 @@ system/
   interface-protocol-nextcloud.md Nextcloud addendum — room-bot model, text-only limits
 
 src/
+  admin-ui.ts           tiny built-in operator UI for workspace.json — Basic Auth, workspace-first HTML/JSON surface, save/check/reconcile/delete actions
   admin-workspace.ts    operator CLI — `reconcile [--check] [--reset-runners]` plus destructive `delete <workspaceKey> --confirm <workspaceKey>`
   attachments.ts         inbound save/vision prep + outbound attachment validation + sandbox path translation
   bridge.ts              main() — startup orchestration, reverse-index inbound routing, special commands, outbound send path
@@ -142,6 +143,7 @@ src/
   split.ts               splitMessage() + splitForSignal() + splitWithStyles()
   transport.ts           transport boundary + inbound metadata + send options/reply targeting
   workspace-control.ts   workspace desired-state summary + reconcile execution for code-server/calendar/provider-model-thinking drift
+  workspace-admin.ts     shared operator actions reused by CLI/UI — destructive workspace delete owner
   workspace-git.ts       bridge-owned workspace git repo init/healing + post-run snapshot commits
   workspace-paths.ts     shared workspace/bridge path constants + normalization helpers
   transports/

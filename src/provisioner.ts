@@ -95,6 +95,33 @@ export interface EnsureProvisionedResult {
   isNew: boolean;
 }
 
+export interface EditableSignalTransportBindingInput {
+  sender?: string;
+  groupId?: string;
+  userWhitelist?: string[];
+}
+
+export interface EditableNextcloudTransportBindingInput {
+  roomToken?: string;
+  userWhitelist?: string[];
+}
+
+export interface EditableWorkspaceRecordInput {
+  label?: string;
+  status?: WorkspaceStatus;
+  workspacePath?: string;
+  signal?: EditableSignalTransportBindingInput;
+  nextcloud?: EditableNextcloudTransportBindingInput;
+  piProvider?: string;
+  piModel?: string;
+  piThinkingLevel?: string;
+  codeServerEnabled?: boolean;
+  calendarEnabled?: boolean;
+  sessionWatchEnabled?: boolean;
+  bootEnabled?: boolean;
+  capabilities?: WorkspaceCapabilitiesRecord;
+}
+
 export function deriveSuggestedWorkspacePath(
   transport: TransportName,
   meta: InboundMessageMeta | undefined,
@@ -388,6 +415,28 @@ export class UserProvisioner {
       if (!record) return;
       record.lastSeen = new Date().toISOString();
       await this.writeRegistryToDisk();
+    });
+  }
+
+  async updateEditableWorkspace(workspaceKey: string, input: EditableWorkspaceRecordInput): Promise<WorkspaceRecord> {
+    await this.initialize();
+
+    return this.withRegistryLock(async () => {
+      const existing = this.registry[workspaceKey];
+      if (!existing) {
+        throw new Error(`Unknown workspace: ${workspaceKey}`);
+      }
+
+      const updated = applyEditableWorkspaceRecord(existing, input);
+      const nextRegistry = {
+        ...this.registry,
+        [workspaceKey]: updated,
+      };
+      const nextReverseIndex = buildReverseIndex(nextRegistry);
+      this.registry = nextRegistry;
+      this.reverseIndex = nextReverseIndex;
+      await this.writeRegistryToDisk();
+      return cloneWorkspaceRecord(updated);
     });
   }
 
@@ -776,6 +825,147 @@ function normalizeBootRecord(value: unknown): BootRecord | undefined {
   return {
     enabled: raw["enabled"] !== false,
   };
+}
+
+function applyEditableWorkspaceRecord(
+  existing: WorkspaceRecord,
+  input: EditableWorkspaceRecordInput,
+): WorkspaceRecord {
+  const updated = cloneWorkspaceRecord(existing);
+
+  if (input.label !== undefined) {
+    updated.label = normalizeOptionalString(input.label);
+  }
+
+  if (input.status !== undefined) {
+    if (existing.provisionedAt && input.status !== existing.status) {
+      throw new Error("status can only be changed before provisioning in v1");
+    }
+    updated.status = normalizeEditableWorkspaceStatus(input.status);
+  }
+
+  if (input.workspacePath !== undefined) {
+    const nextWorkspacePath = normalizeWorkspacePath(input.workspacePath);
+    if (existing.provisionedAt && nextWorkspacePath !== existing.workspacePath) {
+      throw new Error("workspacePath can only be changed before provisioning in v1");
+    }
+    updated.workspacePath = nextWorkspacePath;
+  }
+
+  if (input.signal !== undefined) {
+    if (!existing.transports.signal) {
+      throw new Error("signal binding cannot be added or removed in v1");
+    }
+    updated.transports.signal = applyEditableSignalBinding(existing.transports.signal, input.signal);
+  }
+
+  if (input.nextcloud !== undefined) {
+    if (!existing.transports.nextcloud) {
+      throw new Error("nextcloud binding cannot be added or removed in v1");
+    }
+    updated.transports.nextcloud = applyEditableNextcloudBinding(existing.transports.nextcloud, input.nextcloud);
+  }
+
+  if (!updated.transports.signal && !updated.transports.nextcloud) {
+    throw new Error("workspace must keep at least one transport binding");
+  }
+
+  if (input.piProvider !== undefined) {
+    updated.piProvider = normalizeOptionalString(input.piProvider);
+  }
+  if (input.piModel !== undefined) {
+    updated.piModel = normalizeOptionalString(input.piModel);
+  }
+  if (input.piThinkingLevel !== undefined) {
+    updated.piThinkingLevel = normalizeOptionalString(input.piThinkingLevel);
+  }
+  if (input.codeServerEnabled !== undefined) {
+    updated.codeServer = {
+      ...(updated.codeServer ?? { enabled: false }),
+      enabled: input.codeServerEnabled,
+    };
+  }
+  if (input.calendarEnabled !== undefined) {
+    updated.calendar = {
+      ...(updated.calendar ?? { enabled: false }),
+      enabled: input.calendarEnabled,
+    };
+  }
+  if (input.sessionWatchEnabled !== undefined) {
+    updated.sessionWatch = {
+      ...(updated.sessionWatch ?? { enabled: false }),
+      enabled: input.sessionWatchEnabled,
+    };
+  }
+  if (input.bootEnabled !== undefined) {
+    updated.boot = {
+      ...(updated.boot ?? { enabled: true }),
+      enabled: input.bootEnabled,
+    };
+  }
+  if (input.capabilities !== undefined) {
+    updated.capabilities = normalizeWorkspaceCapabilitiesRecord(input.capabilities);
+  }
+
+  return updated;
+}
+
+function applyEditableSignalBinding(
+  existing: SignalTransportBinding,
+  input: EditableSignalTransportBindingInput,
+): SignalTransportBinding {
+  if (existing.groupId) {
+    if (input.sender !== undefined) {
+      throw new Error("cannot switch a Signal group binding to a sender binding in v1");
+    }
+    const groupId = normalizeOptionalString(input.groupId ?? existing.groupId);
+    if (!groupId) {
+      throw new Error("signal.groupId must not be empty");
+    }
+    return {
+      groupId,
+      userWhitelist: input.userWhitelist !== undefined
+        ? normalizeUserWhitelist(input.userWhitelist)
+        : normalizeUserWhitelist(existing.userWhitelist),
+    };
+  }
+
+  if (input.groupId !== undefined) {
+    throw new Error("cannot switch a Signal sender binding to a group binding in v1");
+  }
+  const sender = normalizeOptionalString(input.sender ?? existing.sender);
+  if (!sender) {
+    throw new Error("signal.sender must not be empty");
+  }
+  return {
+    sender,
+    userWhitelist: input.userWhitelist !== undefined
+      ? normalizeUserWhitelist(input.userWhitelist)
+      : normalizeUserWhitelist(existing.userWhitelist),
+  };
+}
+
+function applyEditableNextcloudBinding(
+  existing: NextcloudTransportBinding,
+  input: EditableNextcloudTransportBindingInput,
+): NextcloudTransportBinding {
+  const roomToken = normalizeOptionalString(input.roomToken ?? existing.roomToken);
+  if (!roomToken) {
+    throw new Error("nextcloud.roomToken must not be empty");
+  }
+  return {
+    roomToken,
+    userWhitelist: input.userWhitelist !== undefined
+      ? normalizeUserWhitelist(input.userWhitelist)
+      : normalizeUserWhitelist(existing.userWhitelist),
+  };
+}
+
+function normalizeEditableWorkspaceStatus(value: WorkspaceStatus): WorkspaceStatus {
+  if (value === "active" || value === "pending") {
+    return value;
+  }
+  throw new Error("Invalid workspace status");
 }
 
 function defaultNewWorkspaceBootRecord(workspaceDefaults?: WorkspaceDefaultsConfig): BootRecord {

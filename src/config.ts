@@ -45,6 +45,13 @@ export interface SessionWatchConfig {
   publicBaseUrl?: string;
 }
 
+export interface AdminUiConfig {
+  bindHost: string;
+  port: number;
+  username: string;
+  password: string;
+}
+
 export interface RuntimeIdentityConfig {
   uid: number;
   gid: number;
@@ -98,6 +105,7 @@ export interface Config {
   codeServer: CodeServerConfig;
   calendar: CalendarConfig;
   sessionWatch?: SessionWatchConfig;
+  adminUi?: AdminUiConfig;
   workspaceDefaults: WorkspaceDefaultsConfig;
   nextcloud: NextcloudConfig;
 }
@@ -159,6 +167,11 @@ export function loadConfig(): Config {
     process.env["CODE_SERVER_EXTENSIONS_MODE"] ?? "append",
   );
   const codeServerEnvExtensions = csv("CODE_SERVER_EXTENSIONS");
+  const adminUiUser = normalizeOptionalString(process.env["ADMIN_UI_USER"]);
+  const adminUiPassword = normalizeOptionalString(process.env["ADMIN_UI_PASSWORD"]);
+  if (!!adminUiUser !== !!adminUiPassword) {
+    throw new Error("ADMIN_UI_USER and ADMIN_UI_PASSWORD must be set together");
+  }
   const runtimeIdentity = resolveRuntimeIdentity(
     parseOptionalIdEnv("BRIDGE_RUNTIME_UID"),
     parseOptionalIdEnv("BRIDGE_RUNTIME_GID"),
@@ -218,6 +231,15 @@ export function loadConfig(): Config {
       port: Number(process.env["SESSION_WATCH_PORT"] ?? "8791"),
       publicBaseUrl: normalizeBaseUrl(normalizeOptionalString(process.env["SESSION_WATCH_PUBLIC_BASE_URL"])),
     },
+
+    adminUi: adminUiUser && adminUiPassword
+      ? {
+        bindHost: "0.0.0.0",
+        port: Number(process.env["ADMIN_UI_PORT"] ?? "8792"),
+        username: adminUiUser,
+        password: adminUiPassword,
+      }
+      : undefined,
 
     workspaceDefaults: {
       codeServerEnabled: process.env["DEFAULT_NEW_WORKSPACE_CODE_SERVER_ENABLED"] === "true",

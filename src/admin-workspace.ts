@@ -10,6 +10,7 @@ import {
   summarizeWorkspaceControlState,
 } from "./workspace-control.js";
 import { WorkspaceCapabilityManager } from "./workspace-capabilities.js";
+import { deleteWorkspaceDestructively } from "./workspace-admin.js";
 
 interface AdminDeps {
   config?: Config;
@@ -75,16 +76,6 @@ async function runDeleteCommand(args: string[], deps: AdminDeps): Promise<void> 
   const provisioner = deps.provisioner ?? createProvisioner(config);
   await provisioner.initialize();
 
-  const record = provisioner.getWorkspace(workspaceKey);
-  if (!record) {
-    throw new Error(`Unknown workspace: ${workspaceKey}`);
-  }
-
-  const paths = provisioner.getWorkspacePaths(workspaceKey);
-  if (!paths) {
-    throw new Error(`Workspace ${workspaceKey} has no resolved workspace path`);
-  }
-
   const sandboxManager = deps.sandboxManager ?? new SandboxManager(sandboxConfigFromEnv(config));
   const codeServerManager = deps.codeServerManager ?? new CodeServerManager(config.codeServer, config.projectsDir, config.bridgeDataDir, {
     bridgeProjectsDir: config.projectsDir,
@@ -96,15 +87,17 @@ async function runDeleteCommand(args: string[], deps: AdminDeps): Promise<void> 
   const outbox = deps.outbox ?? new DurableOutboundQueue(config.bridgeDataDir, {
     resolveTransport: () => undefined,
   });
-  const removeDir = deps.rm ?? fs.rm;
 
-  await sandboxManager.remove(workspaceKey);
-  await codeServerManager.destroy(workspaceKey);
-  await capabilityManager.applyWorkspaceCapabilities(workspaceKey);
-  await inbox.deleteWorkspace(workspaceKey);
-  await outbox.deleteWorkspace(workspaceKey);
-  await removeDir(paths.root, { recursive: true, force: true });
-  await provisioner.deleteWorkspace(workspaceKey);
+  const record = await deleteWorkspaceDestructively({
+    workspaceKey,
+    provisioner,
+    sandboxManager,
+    codeServerManager,
+    capabilityManager,
+    inbox,
+    outbox,
+    rm: deps.rm ?? fs.rm,
+  });
 
   const sendSignal = deps.signalProcess ?? ((pid: number, signal: NodeJS.Signals) => process.kill(pid, signal));
   sendSignal(1, "SIGHUP");

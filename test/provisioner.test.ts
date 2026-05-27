@@ -305,6 +305,98 @@ describe("UserProvisioner", () => {
     expect(live?.calendar?.token).toBe(`${calendar?.token}-updated`);
   });
 
+  it("updates allowlisted workspace fields while preserving bridge-owned generated state", async () => {
+    const prov = createProvisioner();
+    await prov.initialize();
+
+    const provisioned = await prov.ensureProvisioned("signal", "+111", {
+      defaultCodeServerEnabled: true,
+      defaultCalendarEnabled: true,
+    });
+    const original = prov.getWorkspace(provisioned.workspaceKey)!;
+
+    const updated = await prov.updateEditableWorkspace(provisioned.workspaceKey, {
+      label: "Renamed",
+      piProvider: "openai",
+      piModel: "gpt-4o",
+      piThinkingLevel: "minimal",
+      codeServerEnabled: false,
+      calendarEnabled: true,
+      sessionWatchEnabled: true,
+      bootEnabled: false,
+      capabilities: {
+        pdfApi: { enabled: true },
+        spreadsheetRecalc: { enabled: false },
+      },
+      signal: {
+        sender: "+222",
+        userWhitelist: ["+333"],
+      },
+    });
+
+    expect(updated.label).toBe("Renamed");
+    expect(updated.primaryTransport).toBe("signal");
+    expect(updated.transports.signal?.sender).toBe("+222");
+    expect(updated.transports.signal?.userWhitelist).toEqual(["+333"]);
+    expect(updated.piProvider).toBe("openai");
+    expect(updated.piModel).toBe("gpt-4o");
+    expect(updated.piThinkingLevel).toBe("minimal");
+    expect(updated.codeServer?.enabled).toBe(false);
+    expect(updated.codeServer?.password).toBe(original.codeServer?.password);
+    expect(updated.codeServer?.port).toBe(original.codeServer?.port);
+    expect(updated.calendar?.enabled).toBe(true);
+    expect(updated.calendar?.token).toBe(original.calendar?.token);
+    expect(updated.sessionWatch?.enabled).toBe(true);
+    expect(updated.sessionWatch?.token).toBeUndefined();
+    expect(updated.boot).toEqual({ enabled: false });
+    expect(updated.capabilities).toEqual({
+      pdfApi: { enabled: true },
+      spreadsheetRecalc: { enabled: false },
+    });
+    expect(prov.lookup("signal", "+111")).toBeUndefined();
+    expect(prov.lookup("signal", "+222")).toBe(provisioned.workspaceKey);
+  });
+
+  it("rejects workspacePath changes after provisioning in v1", async () => {
+    const prov = createProvisioner();
+    await prov.initialize();
+
+    const provisioned = await prov.ensureProvisioned("signal", "+111");
+
+    await expect(
+      prov.updateEditableWorkspace(provisioned.workspaceKey, {
+        workspacePath: "clients/renamed",
+      }),
+    ).rejects.toThrow("workspacePath can only be changed before provisioning in v1");
+  });
+
+  it("allows editing pending workspace status and path before provisioning", async () => {
+    const prov = createProvisioner();
+    await prov.initialize();
+
+    const pending = await prov.ensurePendingRequest("signal", "+111", {
+      suggestedWorkspacePath: "rooms/original",
+    });
+
+    const updated = await prov.updateEditableWorkspace(pending.workspaceKey, {
+      status: "active",
+      workspacePath: "rooms/renamed",
+      label: "Approved room",
+      signal: {
+        sender: "+222",
+        userWhitelist: ["+333"],
+      },
+    });
+
+    expect(updated.status).toBe("active");
+    expect(updated.provisionedAt).toBeUndefined();
+    expect(updated.workspacePath).toBe("rooms/renamed");
+    expect(updated.label).toBe("Approved room");
+    expect(updated.transports.signal?.sender).toBe("+222");
+    expect(prov.lookup("signal", "+111")).toBeUndefined();
+    expect(prov.lookup("signal", "+222")).toBe(pending.workspaceKey);
+  });
+
   it("writes explicit feature blocks into older workspace records during shape reconciliation", async () => {
     const adminDir = path.join(workspaceDir, "admin");
     await fs.mkdir(adminDir, { recursive: true });

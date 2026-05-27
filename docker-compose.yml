@@ -31,6 +31,7 @@ services:
       - "${NEXTCLOUD_WEBHOOK_PORT:-8788}:${NEXTCLOUD_WEBHOOK_PORT:-8788}"
       - "${CALENDAR_HTTP_PORT:-8789}:${CALENDAR_HTTP_PORT:-8789}"
       - "${SESSION_WATCH_PORT:-8791}:${SESSION_WATCH_PORT:-8791}"
+      - "127.0.0.1:${ADMIN_UI_PORT:-8792}:${ADMIN_UI_PORT:-8792}"
     depends_on:
       code-server-image:
         condition: service_completed_successfully
@@ -104,3 +105,6 @@ services:
       SESSION_WATCH_HOST: "${SESSION_WATCH_HOST:-0.0.0.0}"
       SESSION_WATCH_PORT: "${SESSION_WATCH_PORT:-8791}"
       SESSION_WATCH_PUBLIC_BASE_URL: "${SESSION_WATCH_PUBLIC_BASE_URL:-}"
+      ADMIN_UI_PORT: "${ADMIN_UI_PORT:-8792}"
+      ADMIN_UI_USER: "${ADMIN_UI_USER:-}"
+      ADMIN_UI_PASSWORD: "${ADMIN_UI_PASSWORD:-}"

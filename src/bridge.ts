@@ -30,6 +30,7 @@ import { codeServerStatusUrl, CodeServerManager } from "./code-server.js";
 import { calendarPublicUrl } from "./calendar.js";
 import { CalendarPublisher } from "./calendar-publisher.js";
 import { SessionWatchServer, sessionWatchLocalUrl, sessionWatchPublicUrl } from "./session-watch.js";
+import { AdminUiServer, buildWorkspaceUiState } from "./admin-ui.js";
 import {
   isUserWhitelisted,
   resolveBridgeContainerIdentifier,
@@ -43,10 +44,12 @@ import {
   applyWorkspaceDesiredState,
   formatWorkspaceControlReconcileResult,
   reconcileWorkspaceControlPlane,
+  type WorkspaceControlReconcileResult,
 } from "./workspace-control.js";
 import { workspacePaths } from "./workspace-paths.js";
 import { WorkspaceGitManager } from "./workspace-git.js";
 import { WorkspaceCapabilityManager } from "./workspace-capabilities.js";
+import { deleteWorkspaceDestructively } from "./workspace-admin.js";
 
 export const HELP_TEXT = `Available commands:
 !help            — show this message
@@ -305,8 +308,8 @@ async function main(): Promise<void> {
 
   await reconcileSiblingContainers(config, provisioner, sandboxManager, codeServerManager, hostProjectsDir);
 
-  let reconcileChain: Promise<void> = Promise.resolve();
-  const queueReconcile = (resetRunners: boolean): Promise<void> => {
+  let reconcileChain: Promise<WorkspaceControlReconcileResult | undefined> = Promise.resolve(undefined);
+  const queueReconcile = (resetRunners: boolean): Promise<WorkspaceControlReconcileResult> => {
     const run = reconcileChain.then(async () => {
       const result = await reconcileWorkspaceControlPlane({
         config,
@@ -321,12 +324,47 @@ async function main(): Promise<void> {
       logger.info("bridge", "workspace-reconcile-complete", `Workspace reconcile${resetRunners ? " + reset-runners" : ""} complete\n${formatWorkspaceControlReconcileResult(result)}`, {
         resetRunners,
       });
+      return result;
     });
     reconcileChain = run.catch(() => undefined);
     return run;
   };
 
   await queueReconcile(false);
+
+  const adminUiServer = config.adminUi
+    ? new AdminUiServer(config.adminUi, {
+      provisioner,
+      router,
+      saveWorkspace: (workspaceKey, input) => provisioner.updateEditableWorkspace(workspaceKey, input),
+      checkState: (selectedWorkspaceKey) => buildWorkspaceUiState(config, provisioner, router, selectedWorkspaceKey),
+      reconcile: async (resetRunners, selectedWorkspaceKey) => {
+        const result = await queueReconcile(resetRunners);
+        const state = await buildWorkspaceUiState(config, provisioner, router, selectedWorkspaceKey);
+        return { state, result };
+      },
+      deleteWorkspace: async (workspaceKey) => {
+        const deleted = await deleteWorkspaceDestructively({
+          workspaceKey,
+          provisioner,
+          sandboxManager,
+          codeServerManager,
+          capabilityManager,
+          inbox: runtimeDeps.inbox!,
+          outbox: runtimeDeps.outbox!,
+        });
+        await queueReconcile(false);
+        return deleted;
+      },
+    })
+    : undefined;
+  if (adminUiServer && config.adminUi) {
+    await adminUiServer.start();
+    logger.info("bridge", "admin-ui-ready", `Admin UI ready: bind=${config.adminUi.bindHost}:${config.adminUi.port} (HTTP Basic Auth)`, {
+      bindHost: config.adminUi.bindHost,
+      port: config.adminUi.port,
+    });
+  }
   await loadConstitution(config.systemDir);
   await runtimeDeps.outbox?.recoverPending();
   if (runtimeDeps.inbox) {
@@ -371,6 +409,12 @@ async function main(): Promise<void> {
       await sessionWatchServer.stop();
     } catch (err) {
       logger.error("bridge", "shutdown-session-watch-stop-failed", "Error stopping session watch", { error: err });
+    }
+
+    try {
+      await adminUiServer?.stop();
+    } catch (err) {
+      logger.error("bridge", "shutdown-admin-ui-stop-failed", "Error stopping admin UI", { error: err });
     }
 
     try {

@@ -59,6 +59,7 @@ If both Signal and Nextcloud are configured, both start.
 | `PI_CODING_AGENT_DIR` | optional | Overrides pi's config dir; use `/bridge-data/pi-agent` to persist OAuth auth in bridge-owned storage |
 | `PI_PROVIDER` / `PI_MODEL` / `PI_THINKING_LEVEL` | optional | Default provider/model/thinking selection when a workspace has no override |
 | `DEFAULT_NEW_WORKSPACE_BOOT_ENABLED` | optional | First-provisioning default for the per-workspace `boot.enabled` flag written into `workspace.json` |
+| `ADMIN_UI_PORT` / `ADMIN_UI_USER` / `ADMIN_UI_PASSWORD` | optional | Enables the built-in operator UI when both credentials are set; `ADMIN_UI_PORT` chooses the published local port |
 | provider credentials | required for selected provider | Authentication via API key env vars or pi OAuth state in `PI_CODING_AGENT_DIR` |
 | `BRIDGE_ACCESS_MODE=open|closed|pending` | optional | Unknown transport bindings auto-provision (`open`), are rejected (`closed`), or create a pending approval request in `workspace.json` (`pending`) |
 
@@ -543,6 +544,39 @@ your reverse proxy / tunnel. If you want strict localhost-only exposure in
 Docker, publish the port on `127.0.0.1` (for example via the Compose port
 mapping) rather than binding the service to `127.0.0.1` inside the container.
 If this surface is no longer needed, it should be easy to remove entirely.
+
+---
+
+## Operator admin UI
+
+The bridge can optionally expose one small built-in operator UI for the
+workspace control plane.
+
+Global bridge config lives in `.env`:
+
+```bash
+ADMIN_UI_PORT=8792
+ADMIN_UI_USER=operator
+ADMIN_UI_PASSWORD=replace-with-a-long-random-password
+```
+
+Behavior:
+
+- the UI starts only when both `ADMIN_UI_USER` and `ADMIN_UI_PASSWORD` are set
+- HTTP Basic Auth is the only auth model in v1
+- `workspace.json` remains canonical; the UI is an editor over the existing control plane, not a second source of truth
+- the UI stays workspace-first: searchable workspace list on the left, one selected workspace on the right
+- current operator actions are exposed in-browser: check, reconcile, reconcile + reset inactive runners, and destructive delete
+- in this repo's Docker Compose file, the port is published on `127.0.0.1` by default even though the in-container listener binds normally for Docker reachability
+- the current v1 surface keeps `workspacePath` and `status` read-only after a workspace has already been provisioned, because the bridge does not currently implement workspace moves or active→pending lifecycle rewrites through the UI
+
+The UI is intentionally narrow and removable:
+- one built-in HTTP server
+- self-contained HTML/CSS/JS
+- no database
+- no cookies/session store
+- no role model
+- no public API promise beyond the built-in page itself
 
 ---
 

@@ -1,6 +1,6 @@
 services:
   pdf-api:
-    image: "ghcr.io/timomuc/pdf-api:v0.2.0"
+    image: "ghcr.io/timomuc/pdf-api:v0.2.1"
     container_name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-pdf-api"
     restart: unless-stopped
     healthcheck:

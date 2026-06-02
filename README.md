@@ -279,6 +279,41 @@ This command is intentionally narrow:
 - it does **not** ban a sender / group / room binding
 - a future inbound from the same binding may provision a fresh workspace again according to the normal `BRIDGE_ACCESS_MODE` policy, with a new workspace key
 
+### Temporary sandbox admin command
+
+For one-off high-trust sandbox administration on a provisioned workspace, run:
+
+```bash
+docker exec <bridge-container> node /app/dist/admin-workspace.js sandbox <workspaceKey> --cmd 'apt-get update && apt-get install -y poppler-utils'
+```
+
+Optional advanced flags stay on this CLI path only:
+
+```bash
+docker exec <bridge-container> node /app/dist/admin-workspace.js sandbox <workspaceKey> \
+  --cmd 'uv add pdfplumber' \
+  --user 0 \
+  --cwd /workspace \
+  --network <docker-network-name> \
+  --log /bridge-data/admin/sandbox-admin-history.jsonl \
+  --bridge-container <bridge-container>
+```
+
+Behavior:
+
+- validates that the workspace exists and has been provisioned
+- temporarily attaches a usable Docker network when the sandbox does not already have it
+- runs one `sh -lc` command inside the selected sandbox
+- disconnects that temporary network attachment again when this run added it
+- appends a replayable structured history entry to `BRIDGE_DATA_DIR/admin/sandbox-admin-history.jsonl`
+- migrates legacy `sandbox-admin-history.shlog` entries into the new JSONL file once, then removes the old file
+
+This command is intentionally high-trust and operator-only:
+
+- it is **not** a user chat command
+- it is **not** durable desired state
+- package installs or other mutations done this way may disappear when the sandbox is later recreated
+
 ### Optional workspace capabilities
 
 Capability reachability is also controlled through `workspace.json`.
@@ -568,12 +603,13 @@ Behavior:
 - HTTP Basic Auth is the only auth model in v1
 - `workspace.json` remains canonical; the UI is an editor over the existing control plane, not a second source of truth
 - the UI stays workspace-first: searchable workspace list on the left, one selected workspace on the right
-- current operator actions are exposed in-browser: check, reconcile, reconcile + reset inactive runners, and destructive delete
+- current operator actions are exposed in-browser: check, reconcile, reconcile + reset inactive runners, one narrow temporary sandbox admin action, and destructive delete
 - in this repo's Docker Compose file, `ADMIN_UI_PUBLISH_HOST` controls the host-side publish address
 - `ADMIN_UI_PUBLISH_HOST=127.0.0.1` keeps the UI localhost-only on the bridge host
 - set `ADMIN_UI_PUBLISH_HOST=0.0.0.0` (or a specific LAN IP) when other machines on your network should reach the UI directly
 - the in-container listener still binds normally for Docker reachability; changing the host-side publish address is the operator-facing access control knob
 - the current v1 surface keeps `workspacePath` and `status` read-only after a workspace has already been provisioned, because the bridge does not currently implement workspace moves or active→pending lifecycle rewrites through the UI
+- the temporary sandbox admin panel is explicitly imperative and separate from `workspace.json`; the page only keeps the last command output ephemerally in-browser while the bridge appends durable replayable history server-side
 
 The UI is intentionally narrow and removable:
 - one built-in HTTP server

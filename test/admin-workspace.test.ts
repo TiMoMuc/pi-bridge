@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runAdminWorkspace } from "../src/admin-workspace.js";
 import { DurableIngressQueue } from "../src/inbox-queue.js";
+import type { SandboxAdminRunResult } from "../src/sandbox-admin.js";
 import { initializeLogger, resetLoggerForTests } from "../src/logger.js";
 import { DurableOutboundQueue } from "../src/outbox-queue.js";
 import { UserProvisioner } from "../src/provisioner.js";
@@ -103,6 +104,27 @@ describe("admin-workspace", () => {
     });
   }
 
+  function makeSandboxAdminResult(): SandboxAdminRunResult {
+    return {
+      version: 1,
+      timestamp: "2026-05-28T12:00:00.000Z",
+      workspaceKey: "ws_a7b3c9",
+      sandboxContainer: "pi-sandbox-ws_a7b3c9",
+      bridgeContainer: "pi-bridge",
+      network: "pi_default",
+      cwd: "/workspace",
+      user: "0",
+      command: "apt-get update",
+      exitCode: 7,
+      stdout: "hello\n",
+      stderr: "warning\n",
+      attachedHere: true,
+      disconnectFailed: false,
+      replay: [],
+      historyPath: "/bridge-data/admin/sandbox-admin-history.jsonl",
+    };
+  }
+
   it("prints a dry-run summary for --check", async () => {
     const provisioner = createProvisioner();
     await provisioner.initialize();
@@ -123,6 +145,60 @@ describe("admin-workspace", () => {
 
     expect(signalProcess).toHaveBeenNthCalledWith(1, 1, "SIGHUP");
     expect(signalProcess).toHaveBeenNthCalledWith(2, 1, "SIGUSR1");
+  });
+
+  it("runs sandbox admin through the shared owner and returns the command exit code", async () => {
+    const provisioner = createProvisioner();
+    await provisioner.initialize();
+    const provisioned = await provisioner.ensureProvisioned("signal", "+15551234567");
+
+    const runSandboxAdmin = vi.fn(async () => ({
+      ...makeSandboxAdminResult(),
+      workspaceKey: provisioned.workspaceKey,
+    }));
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderrWrite = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    const exitCode = await runAdminWorkspace([
+      "sandbox",
+      provisioned.workspaceKey,
+      "--cmd",
+      "apt-get update",
+      "--user",
+      "1000:1000",
+      "--cwd",
+      "/workspace/cowork",
+      "--network",
+      "pi_default",
+      "--log",
+      "/tmp/sandbox-admin.jsonl",
+      "--bridge-container",
+      "bridge-test",
+    ], {
+      config,
+      provisioner,
+      runSandboxAdmin,
+    });
+
+    expect(exitCode).toBe(7);
+    expect(runSandboxAdmin).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceKey: provisioned.workspaceKey,
+      command: "apt-get update",
+      user: "1000:1000",
+      cwd: "/workspace/cowork",
+      network: "pi_default",
+      logPath: "/tmp/sandbox-admin.jsonl",
+      bridgeContainer: "bridge-test",
+      bridgeDataDir: config.bridgeDataDir,
+    }));
+    expect(stdoutWrite).toHaveBeenCalledWith("hello\n");
+    expect(stderrWrite).toHaveBeenCalledWith("warning\n");
+  });
+
+  it("refuses sandbox admin without --cmd", async () => {
+    await expect(
+      runAdminWorkspace(["sandbox", "ws_a7b3c9"], { config }),
+    ).rejects.toThrow("Missing value for --cmd");
   });
 
   it("refuses destructive delete unless --confirm exactly matches the workspace key", async () => {

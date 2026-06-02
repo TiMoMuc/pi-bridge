@@ -50,6 +50,7 @@ import { workspacePaths } from "./workspace-paths.js";
 import { WorkspaceGitManager } from "./workspace-git.js";
 import { WorkspaceCapabilityManager } from "./workspace-capabilities.js";
 import { deleteWorkspaceDestructively } from "./workspace-admin.js";
+import { migrateLegacySandboxAdminHistory, runSandboxAdminCommand } from "./sandbox-admin.js";
 
 export const HELP_TEXT = `Available commands:
 !help            — show this message
@@ -78,6 +79,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   initializeLogger(config.bridgeDataDir);
   const logger = getLogger();
+  await migrateLegacySandboxAdminHistory(config.bridgeDataDir);
   logger.info("bridge", "startup", "Starting bridge", {
     bridgeDataDir: config.bridgeDataDir,
     projectsDir: config.projectsDir,
@@ -355,6 +357,20 @@ async function main(): Promise<void> {
         });
         await queueReconcile(false);
         return deleted;
+      },
+      runSandboxAdmin: async (workspaceKey, command) => {
+        const record = provisioner.getWorkspace(workspaceKey);
+        if (!record) {
+          throw new Error(`Unknown workspace: ${workspaceKey}`);
+        }
+        if (!record.provisionedAt) {
+          throw new Error(`Workspace ${workspaceKey} is not provisioned yet; no sandbox exists to administer.`);
+        }
+        return runSandboxAdminCommand({
+          workspaceKey,
+          command,
+          bridgeDataDir: config.bridgeDataDir,
+        });
       },
     })
     : undefined;

@@ -11,6 +11,7 @@ import {
 } from "./workspace-control.js";
 import { WorkspaceCapabilityManager } from "./workspace-capabilities.js";
 import { deleteWorkspaceDestructively } from "./workspace-admin.js";
+import { migrateLegacySandboxAdminHistory, runSandboxAdminCommand, type SandboxAdminRunResult } from "./sandbox-admin.js";
 
 interface AdminDeps {
   config?: Config;
@@ -22,25 +23,31 @@ interface AdminDeps {
   outbox?: DurableOutboundQueue;
   signalProcess?: typeof process.kill;
   rm?: typeof fs.rm;
+  runSandboxAdmin?: (options: Parameters<typeof runSandboxAdminCommand>[0]) => Promise<SandboxAdminRunResult>;
 }
 
 const USAGE = [
   "Usage:",
   "  admin-workspace.js reconcile [--check] [--reset-runners]",
   "  admin-workspace.js delete <workspaceKey> --confirm <workspaceKey>",
+  "  admin-workspace.js sandbox <workspaceKey> --cmd '<shell command>' [--user <uid[:gid]>] [--cwd <path>] [--network <name>] [--log <path>] [--bridge-container <name>]",
 ].join("\n");
 
-export async function runAdminWorkspace(argv: string[], deps: AdminDeps = {}): Promise<void> {
+export async function runAdminWorkspace(argv: string[], deps: AdminDeps = {}): Promise<number> {
   const [command, ...args] = argv;
 
   if (command === "reconcile") {
     await runReconcileCommand(args, deps);
-    return;
+    return 0;
   }
 
   if (command === "delete") {
     await runDeleteCommand(args, deps);
-    return;
+    return 0;
+  }
+
+  if (command === "sandbox") {
+    return runSandboxCommand(args, deps);
   }
 
   throw new Error(USAGE);
@@ -106,6 +113,46 @@ async function runDeleteCommand(args: string[], deps: AdminDeps): Promise<void> 
   );
 }
 
+async function runSandboxCommand(args: string[], deps: AdminDeps): Promise<number> {
+  const parsed = parseSandboxArgs(args);
+  const config = deps.config ?? loadConfig();
+  const provisioner = deps.provisioner ?? createProvisioner(config);
+  await provisioner.initialize();
+
+  const record = provisioner.getWorkspace(parsed.workspaceKey);
+  if (!record) {
+    throw new Error(`Unknown workspace: ${parsed.workspaceKey}`);
+  }
+  if (!record.provisionedAt) {
+    throw new Error(`Workspace ${parsed.workspaceKey} is not provisioned yet; no sandbox exists to administer.`);
+  }
+
+  await migrateLegacySandboxAdminHistory(config.bridgeDataDir);
+
+  const runSandboxAdmin = deps.runSandboxAdmin ?? ((options) => runSandboxAdminCommand(options));
+  const result = await runSandboxAdmin({
+    workspaceKey: parsed.workspaceKey,
+    command: parsed.command,
+    bridgeDataDir: config.bridgeDataDir,
+    bridgeContainer: parsed.bridgeContainer,
+    network: parsed.network,
+    user: parsed.user,
+    cwd: parsed.cwd,
+    logPath: parsed.logPath,
+  });
+
+  if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+  if (result.stderr) {
+    process.stderr.write(result.stderr);
+  }
+  console.log(
+    `[admin-workspace] Sandbox command for ${parsed.workspaceKey} finished with exit=${result.exitCode} network=${result.network} log=${result.historyPath}`,
+  );
+  return result.exitCode;
+}
+
 function parseDeleteArgs(args: string[]): string {
   const [workspaceKey, ...flags] = args;
   if (!workspaceKey || workspaceKey.startsWith("--")) {
@@ -137,6 +184,88 @@ function parseDeleteArgs(args: string[]): string {
   return workspaceKey;
 }
 
+function parseSandboxArgs(args: string[]): {
+  workspaceKey: string;
+  command: string;
+  bridgeContainer?: string;
+  network?: string;
+  user?: string;
+  cwd?: string;
+  logPath?: string;
+} {
+  const [workspaceKey, ...flags] = args;
+  if (!workspaceKey || workspaceKey.startsWith("--")) {
+    throw new Error(USAGE);
+  }
+
+  let command: string | undefined;
+  let bridgeContainer: string | undefined;
+  let network: string | undefined;
+  let user: string | undefined;
+  let cwd: string | undefined;
+  let logPath: string | undefined;
+  const invalid: string[] = [];
+
+  for (let i = 0; i < flags.length; i += 1) {
+    const flag = flags[i];
+    const value = flags[i + 1];
+    if (["--cmd", "--bridge-container", "--network", "--user", "--cwd", "--log"].includes(flag)) {
+      if (!value) {
+        throw new Error(`Missing value for ${flag}\n${USAGE}`);
+      }
+    }
+
+    if (flag === "--cmd") {
+      command = value;
+      i += 1;
+      continue;
+    }
+    if (flag === "--bridge-container") {
+      bridgeContainer = value;
+      i += 1;
+      continue;
+    }
+    if (flag === "--network") {
+      network = value;
+      i += 1;
+      continue;
+    }
+    if (flag === "--user") {
+      user = value;
+      i += 1;
+      continue;
+    }
+    if (flag === "--cwd") {
+      cwd = value;
+      i += 1;
+      continue;
+    }
+    if (flag === "--log") {
+      logPath = value;
+      i += 1;
+      continue;
+    }
+    invalid.push(flag);
+  }
+
+  if (invalid.length > 0) {
+    throw new Error(`Unknown flags: ${invalid.join(", ")}\n${USAGE}`);
+  }
+  if (!command?.trim()) {
+    throw new Error(`Missing value for --cmd\n${USAGE}`);
+  }
+
+  return {
+    workspaceKey,
+    command,
+    bridgeContainer,
+    network,
+    user,
+    cwd,
+    logPath,
+  };
+}
+
 function createProvisioner(config: Config): UserProvisioner {
   return new UserProvisioner(config.bridgeDataDir, config.projectsDir, config.blueprintDir, {
     codeServer: config.codeServer,
@@ -151,8 +280,12 @@ function createProvisioner(config: Config): UserProvisioner {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runAdminWorkspace(process.argv.slice(2)).catch((err) => {
-    console.error("[admin-workspace] Fatal:", err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  });
+  runAdminWorkspace(process.argv.slice(2))
+    .then((code) => {
+      process.exit(code);
+    })
+    .catch((err) => {
+      console.error("[admin-workspace] Fatal:", err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    });
 }

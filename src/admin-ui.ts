@@ -12,6 +12,7 @@ import {
   type WorkspaceControlReconcileResult,
 } from "./workspace-control.js";
 import { sessionWatchLocalUrl, sessionWatchPublicUrl } from "./session-watch.js";
+import type { SandboxAdminRunResult } from "./sandbox-admin.js";
 
 const HEALTH_PATH = "/healthz";
 const ADMIN_ROUTE_PREFIX = "/admin";
@@ -85,6 +86,7 @@ interface ActionResponse {
   message: string;
   state?: WorkspaceUiState;
   details?: string;
+  sandboxAdmin?: SandboxAdminRunResult;
 }
 
 interface AdminUiDeps {
@@ -97,6 +99,7 @@ interface AdminUiDeps {
     result: WorkspaceControlReconcileResult;
   }>;
   deleteWorkspace: (workspaceKey: string) => Promise<WorkspaceRecord>;
+  runSandboxAdmin: (workspaceKey: string, command: string) => Promise<SandboxAdminRunResult>;
 }
 
 export class AdminUiServer {
@@ -229,25 +232,49 @@ export class AdminUiServer {
         return;
       }
 
-      const deleteRoute = parseWorkspaceRoute(pathname, "POST");
-      if (method === "POST" && deleteRoute?.kind === "delete") {
+      const postRoute = parseWorkspaceRoute(pathname, "POST");
+      if (method === "POST" && postRoute?.kind === "sandbox-admin") {
         const body = await readJsonBody(req);
-        const confirm = asOptionalString(body?.confirm);
-        if (confirm !== deleteRoute.workspaceKey) {
+        const command = normalizeOptionalString(asOptionalString(body?.command));
+        if (!command) {
           this.sendJson(res, 400, {
             ok: false,
             level: "error",
-            message: `Refusing destructive delete: confirmation must exactly match ${deleteRoute.workspaceKey}.`,
+            message: "Sandbox admin command must not be empty.",
           } satisfies ActionResponse);
           return;
         }
 
-        const deleted = await this.deps.deleteWorkspace(deleteRoute.workspaceKey);
+        const result = await this.deps.runSandboxAdmin(postRoute.workspaceKey, command);
+        this.sendJson(res, 200, {
+          ok: true,
+          level: result.exitCode === 0 ? "success" : "error",
+          message: result.exitCode === 0
+            ? `Sandbox admin command completed for ${postRoute.workspaceKey}.`
+            : `Sandbox admin command exited ${result.exitCode} for ${postRoute.workspaceKey}.`,
+          sandboxAdmin: result,
+        } satisfies ActionResponse);
+        return;
+      }
+
+      if (method === "POST" && postRoute?.kind === "delete") {
+        const body = await readJsonBody(req);
+        const confirm = asOptionalString(body?.confirm);
+        if (confirm !== postRoute.workspaceKey) {
+          this.sendJson(res, 400, {
+            ok: false,
+            level: "error",
+            message: `Refusing destructive delete: confirmation must exactly match ${postRoute.workspaceKey}.`,
+          } satisfies ActionResponse);
+          return;
+        }
+
+        const deleted = await this.deps.deleteWorkspace(postRoute.workspaceKey);
         const state = await this.deps.checkState();
         this.sendJson(res, 200, {
           ok: true,
           level: "success",
-          message: `Deleted ${deleteRoute.workspaceKey} (${deleted.workspacePath}) destructively.`,
+          message: `Deleted ${postRoute.workspaceKey} (${deleted.workspacePath}) destructively.`,
           state,
         } satisfies ActionResponse);
         return;
@@ -456,6 +483,7 @@ function describeBinding(record: WorkspaceRecord): string {
 function parseWorkspaceRoute(pathname: string, method: "PUT" | "POST"):
   | { kind: "workspace"; workspaceKey: string }
   | { kind: "delete"; workspaceKey: string }
+  | { kind: "sandbox-admin"; workspaceKey: string }
   | undefined {
   const prefix = `${ADMIN_API_PREFIX}/workspaces/`;
   if (!pathname.startsWith(prefix)) return undefined;
@@ -464,6 +492,12 @@ function parseWorkspaceRoute(pathname: string, method: "PUT" | "POST"):
 
   if (method === "PUT" && !rest.includes("/")) {
     return { kind: "workspace", workspaceKey: decodeURIComponent(rest) };
+  }
+
+  if (method === "POST" && rest.endsWith("/sandbox-admin")) {
+    const workspaceKey = rest.slice(0, -"/sandbox-admin".length);
+    if (!workspaceKey || workspaceKey.includes("/")) return undefined;
+    return { kind: "sandbox-admin", workspaceKey: decodeURIComponent(workspaceKey) };
   }
 
   if (method === "POST" && rest.endsWith("/delete")) {
@@ -825,6 +859,21 @@ function renderAdminPage(): string {
       margin-top: 8px;
     }
 
+    .output-block {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 6px;
+      background: var(--panel-bg);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .output-meta {
+      color: var(--muted);
+      margin-top: 10px;
+      margin-bottom: 8px;
+    }
+
     @media (max-width: 980px) {
       .app,
       .app.sidebar-hidden {
@@ -925,6 +974,8 @@ function renderAdminPage(): string {
     let selectedWorkspaceKey = null;
     let sidebarHidden = false;
     let dirty = false;
+    let lastSandboxAdminResult = null;
+    let sandboxAdminDraft = '';
 
     function setStatus(message, level = "info", details = "") {
       statusPanelEl.classList.remove("success", "error");
@@ -980,6 +1031,8 @@ function renderAdminPage(): string {
       const result = await apiJson(url.toString(), { method: "GET" });
       uiState = result.state;
       selectedWorkspaceKey = uiState && uiState.selectedWorkspaceKey ? uiState.selectedWorkspaceKey : null;
+      lastSandboxAdminResult = null;
+      sandboxAdminDraft = '';
       render();
       setDirty(false);
       setStatus(statusMessage || result.message, "info", result.details || "");
@@ -1092,6 +1145,8 @@ function renderAdminPage(): string {
           + '</div></div>'
         : '';
 
+      const sandboxAdminSection = renderSandboxAdminSection(detail);
+
       workspaceDetailEl.innerHTML = ''
         + '<div class="card">'
         + '  <div class="toolbar">'
@@ -1164,7 +1219,66 @@ function renderAdminPage(): string {
         + renderReadonlyField('Calendar feed', detail.access.calendarUrl || '(not available)')
         + renderReadonlyField('Session watch', detail.access.sessionWatchUrl || '(not available)')
         + '  </div>'
+        + '</div>'
+
+        + sandboxAdminSection;
+    }
+
+    function renderSandboxAdminSection(detail) {
+      const result = lastSandboxAdminResult && lastSandboxAdminResult.workspaceKey === detail.workspaceKey
+        ? lastSandboxAdminResult
+        : null;
+      const output = result
+        ? '<div class="output-meta">'
+          + escapeHtml(result.timestamp) + ' · exit=' + escapeHtml(String(result.exitCode)) + ' · network=' + escapeHtml(result.network) + ' · user=' + escapeHtml(result.user) + ' · cwd=' + escapeHtml(result.cwd)
+          + (result.disconnectFailed ? ' · disconnect failed' : '')
+          + '</div>'
+          + '<div class="output-block">' + escapeHtml(formatSandboxAdminOutput(result)) + '</div>'
+        : '<div class="empty" style="margin-top: 10px;">No sandbox admin run in this page view yet.</div>';
+      const placeholder = detail.provisionedAt
+        ? 'apt-get update && apt-get install -y poppler-utils'
+        : 'Workspace is not provisioned yet.';
+
+      return ''
+        + '<div class="card">'
+        + '  <div class="toolbar">'
+        + '    <div class="toolbar-left">'
+        + '      <h2>Temporary sandbox admin</h2>'
+        + '      <span class="pill warn">imperative</span>'
+        + '      <span class="pill warn">not in workspace.json</span>'
+        + '    </div>'
+        + '    <div class="toolbar-right muted">operator-only · temporary network attach → exec → disconnect</div>'
+        + '  </div>'
+        + '  <div class="hint">Use this only for short-lived sandbox intervention on the selected workspace. Advanced options stay on the CLI path: <code>admin-workspace.js sandbox</code>. Package installs here are not durable desired state and may disappear when the sandbox is later recreated.</div>'
+        + '  <div class="field" style="margin-top: 12px;">'
+        + '    <label>Command</label>'
+        + '    <textarea id="sandboxAdminCommand" placeholder="' + escapeAttr(placeholder) + '" ' + (detail.provisionedAt ? '' : 'disabled') + '>' + escapeHtml(sandboxAdminDraft) + '</textarea>'
+        + '  </div>'
+        + '  <div class="toolbar" style="margin-top: 12px;">'
+        + '    <div class="toolbar-left">'
+        + '      <button id="run-sandbox-admin" class="danger" ' + (detail.provisionedAt ? '' : 'disabled') + '>Run sandbox command</button>'
+        + '    </div>'
+        + '    <div class="toolbar-right muted">last output is ephemeral to this page view · history is still appended server-side</div>'
+        + '  </div>'
+        + '  <div style="margin-top: 12px;">'
+        + '    <strong>Last run output</strong>'
+        + output
+        + '  </div>'
         + '</div>';
+    }
+
+    function formatSandboxAdminOutput(result) {
+      const parts = [];
+      if (result.stdout) {
+        parts.push('$ stdout\n' + result.stdout.trimEnd());
+      }
+      if (result.stderr) {
+        parts.push('$ stderr\n' + result.stderr.trimEnd());
+      }
+      if (parts.length === 0) {
+        parts.push('(no stdout/stderr)');
+      }
+      return parts.join('\n\n');
     }
 
     function renderThinkingOptions(current) {
@@ -1207,6 +1321,31 @@ function renderAdminPage(): string {
           el.addEventListener('input', () => setDirty(true));
           el.addEventListener('change', () => setDirty(true));
         });
+
+      const sandboxAdminButton = document.getElementById('run-sandbox-admin');
+      if (sandboxAdminButton) {
+        sandboxAdminButton.addEventListener('click', async () => {
+          try {
+            const key = currentSelectedKey();
+            if (!key) throw new Error('No workspace selected.');
+            const command = valueOf('sandboxAdminCommand').trim();
+            if (!command) throw new Error('Sandbox admin command must not be empty.');
+            sandboxAdminDraft = command;
+            sandboxAdminButton.disabled = true;
+            const result = await apiJson('/admin/api/workspaces/' + encodeURIComponent(key) + '/sandbox-admin', {
+              method: 'POST',
+              body: JSON.stringify({ command }),
+            });
+            lastSandboxAdminResult = result.sandboxAdmin || null;
+            render();
+            setStatus(result.message, result.level, result.details || '');
+          } catch (err) {
+            setStatus(err instanceof Error ? err.message : String(err), 'error');
+          } finally {
+            sandboxAdminButton.disabled = false;
+          }
+        });
+      }
     }
 
     searchEl.addEventListener('input', () => renderWorkspaceList());

@@ -116,7 +116,7 @@ system/
 
 src/
   admin-ui.ts           tiny built-in operator UI for workspace.json — Basic Auth, workspace-first HTML/JSON surface, save/check/reconcile/delete actions
-  admin-workspace.ts    operator CLI — `reconcile [--check] [--reset-runners]` plus destructive `delete <workspaceKey> --confirm <workspaceKey>`
+  admin-workspace.ts    operator CLI — `reconcile [--check] [--reset-runners]`, destructive `delete <workspaceKey> --confirm <workspaceKey>`, and `sandbox <workspaceKey> --cmd ...` for temporary sandbox admin work
   attachments.ts         inbound save/vision prep + outbound attachment validation + sandbox path translation
   bridge.ts              main() — startup orchestration, reverse-index inbound routing, special commands, outbound send path
   bridge-runtime.ts      transport-aware auth/recipient/target helpers + inbound binding-id resolution
@@ -137,13 +137,14 @@ src/
   provisioner.ts         blueprint copy, opaque workspace ids, reverse index, workspace.json registry + code-server/calendar/model metadata
   runner.ts              AgentRunner + session creation + wait() custom tool registration + sandbox tool overrides + raw assistant response capture
   sandbox.ts             Docker sandbox lifecycle, executors, host-mount detection
+  sandbox-admin.ts       shared temporary sandbox admin owner: network attach → command exec → disconnect + history + legacy log migration
   session-router.ts      per-workspace runner cache + dispatch serialization + workspace PI selection resolution + sandbox lookup
   session-watch.ts       optional live watch page + SSE stream for `session.subscribe()` run/tool/text events
   sibling-containers.ts  shared sibling-container naming, labels, discovery, and workspace-key sanitizing
   split.ts               splitMessage() + splitForSignal() + splitWithStyles()
   transport.ts           transport boundary + inbound metadata + send options/reply targeting
   workspace-control.ts   workspace desired-state summary + reconcile execution for code-server/calendar/provider-model-thinking drift
-  workspace-admin.ts     shared operator actions reused by CLI/UI — destructive workspace delete owner
+  workspace-admin.ts     shared destructive workspace delete owner reused by CLI/UI
   workspace-git.ts       bridge-owned workspace git repo init/healing + post-run snapshot commits
   workspace-paths.ts     shared workspace/bridge path constants + normalization helpers
   transports/
@@ -155,6 +156,7 @@ src/
     signal-reaction-tags.ts compatibility wrappers around outbound reaction-tag parsing
 
 test/
+  admin-ui.test.ts
   admin-workspace.test.ts
   attachments.test.ts
   bridge-runtime.test.ts
@@ -177,6 +179,7 @@ test/
   provisioner.test.ts
   session-log-parser-skill.test.ts
   runner.test.ts
+  sandbox-admin.test.ts
   sandbox-tool-contract.test.ts
   sandbox.test.ts
   session-router.test.ts

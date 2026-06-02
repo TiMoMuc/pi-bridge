@@ -19,6 +19,8 @@ const BRIDGE_OUTBOX_DIRNAME = "outbox";
 const BRIDGE_CODE_SERVER_STATE_DIRNAME = "code-server";
 const WORKSPACE_REGISTRY_FILENAME = "workspace.json";
 const SIGNAL_MESSAGE_REFS_FILENAME = "signal-message-refs.jsonl";
+const SANDBOX_ADMIN_HISTORY_FILENAME = "sandbox-admin-history.jsonl";
+const LEGACY_SANDBOX_ADMIN_HISTORY_FILENAME = "sandbox-admin-history.shlog";
 
 export interface WorkspacePaths {
   root: string;
@@ -60,6 +62,14 @@ export function workspaceRegistryPath(bridgeDataDir: string): string {
 
 export function signalMessageRefsPath(bridgeDataDir: string): string {
   return path.join(bridgeAdminDir(bridgeDataDir), SIGNAL_MESSAGE_REFS_FILENAME);
+}
+
+export function sandboxAdminHistoryPath(bridgeDataDir: string): string {
+  return path.join(bridgeAdminDir(bridgeDataDir), SANDBOX_ADMIN_HISTORY_FILENAME);
+}
+
+export function legacySandboxAdminHistoryPath(bridgeDataDir: string): string {
+  return path.join(bridgeAdminDir(bridgeDataDir), LEGACY_SANDBOX_ADMIN_HISTORY_FILENAME);
 }
 
 export function codeServerStatePaths(bridgeDataDir: string, workspaceKey: string): {

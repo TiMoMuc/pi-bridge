@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminUiServer } from "../src/admin-ui.js";
 import type { EditableWorkspaceRecordInput, WorkspaceRecord } from "../src/provisioner.js";
+import type { SandboxAdminRunResult } from "../src/sandbox-admin.js";
 import type { WorkspaceControlReconcileResult } from "../src/workspace-control.js";
 
 const baseState = {
@@ -93,6 +94,27 @@ function makeReconcileResult(): WorkspaceControlReconcileResult {
   };
 }
 
+function makeSandboxAdminResult(): SandboxAdminRunResult {
+  return {
+    version: 1,
+    timestamp: "2026-05-28T12:00:00.000Z",
+    workspaceKey: "ws_a7b3c9",
+    sandboxContainer: "pi-sandbox-ws_a7b3c9",
+    bridgeContainer: "pi-bridge",
+    network: "pi_default",
+    cwd: "/workspace",
+    user: "0",
+    command: "apt-get update",
+    exitCode: 0,
+    stdout: "ok\n",
+    stderr: "",
+    attachedHere: true,
+    disconnectFailed: false,
+    replay: [],
+    historyPath: "/bridge-data/admin/sandbox-admin-history.jsonl",
+  };
+}
+
 describe("AdminUiServer", () => {
   const servers: AdminUiServer[] = [];
 
@@ -106,6 +128,7 @@ describe("AdminUiServer", () => {
     checkState?: (workspaceKey?: string) => Promise<typeof baseState>;
     reconcile?: (resetRunners: boolean, workspaceKey?: string) => Promise<{ state: typeof baseState; result: WorkspaceControlReconcileResult }>;
     deleteWorkspace?: (workspaceKey: string) => Promise<WorkspaceRecord>;
+    runSandboxAdmin?: (workspaceKey: string, command: string) => Promise<SandboxAdminRunResult>;
   } = {}): AdminUiServer {
     const server = new AdminUiServer({
       bindHost: "127.0.0.1",
@@ -119,6 +142,7 @@ describe("AdminUiServer", () => {
       checkState: overrides.checkState ?? (async () => baseState),
       reconcile: overrides.reconcile ?? (async () => ({ state: baseState, result: makeReconcileResult() })),
       deleteWorkspace: overrides.deleteWorkspace ?? (async () => makeRecord()),
+      runSandboxAdmin: overrides.runSandboxAdmin ?? (async () => makeSandboxAdminResult()),
     });
     servers.push(server);
     return server;
@@ -144,7 +168,9 @@ describe("AdminUiServer", () => {
     expect(unauthenticated.headers.get("www-authenticate")).toContain("Basic");
     expect(authenticated.status).toBe(200);
     expect(authenticated.headers.get("content-type")).toContain("text/html");
-    expect(await authenticated.text()).toContain("workspace.json is canonical");
+    const page = await authenticated.text();
+    expect(page).toContain("workspace.json is canonical");
+    expect(page).toContain("Temporary sandbox admin");
   });
 
   it("returns current UI state from the authenticated JSON endpoint", async () => {
@@ -236,6 +262,27 @@ describe("AdminUiServer", () => {
     expect(reconcile).toHaveBeenCalledWith(true, "ws_a7b3c9");
     expect(body.message).toContain("reset inactive runners");
     expect(body.details).toContain("codeServerStarted=ws_a7b3c9");
+  });
+
+  it("runs sandbox admin through the shared callback", async () => {
+    const runSandboxAdmin = vi.fn(async () => makeSandboxAdminResult());
+    const server = createServer({ runSandboxAdmin });
+    const baseUrl = await serverUrl(server);
+
+    const response = await fetch(`${baseUrl}/admin/api/workspaces/ws_a7b3c9/sandbox-admin`, {
+      method: "POST",
+      headers: {
+        Authorization: basicAuth("operator", "secret"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ command: "apt-get update" }),
+    });
+    const body = await response.json() as { sandboxAdmin: SandboxAdminRunResult; message: string };
+
+    expect(response.status).toBe(200);
+    expect(runSandboxAdmin).toHaveBeenCalledWith("ws_a7b3c9", "apt-get update");
+    expect(body.message).toContain("Sandbox admin command completed");
+    expect(body.sandboxAdmin.exitCode).toBe(0);
   });
 
   it("requires typed confirmation for destructive delete", async () => {

@@ -12,6 +12,7 @@ node_modules/
 # Runtime workspace (bind-mount target — all user data lives here, symlink on dev machines)
 workspace-host
 workspace-dev
+bridge-data
 
 # macOS
 .DS_Store

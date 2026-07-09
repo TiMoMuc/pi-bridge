@@ -1,4 +1,6 @@
 # pi-bridge
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FTiMoMuc%2Fpi-bridge.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FTiMoMuc%2Fpi-bridge?ref=badge_shield)
+
 
 Message the bridge on Signal or Nextcloud Talk → a [pi coding agent](https://github.com/badlogic/pi-mono) replies with full tool access (bash, read, edit, write). Each workspace is persistent, gets its own session history and sandbox companion, may opt into a code-server companion, and can continue improving itself through workspace-owned scheduled events.
 
@@ -762,3 +764,7 @@ find bridge-data/admin/outbox -maxdepth 2 -name '*.json' -print
 ```bash
 docker exec <bridge-container> node /app/dist/admin-workspace.js reconcile
 ```
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FTiMoMuc%2Fpi-bridge.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FTiMoMuc%2Fpi-bridge?ref=badge_large)

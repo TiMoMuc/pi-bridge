@@ -20,3 +20,6 @@ bridge-data
 # Editor
 .vscode/settings.json
 .idea/
+
+# Pi
+.pi/

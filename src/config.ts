@@ -179,7 +179,7 @@ export function loadConfig(): Config {
   );
 
   const config: Config = {
-    signalCliUrl: process.env["SIGNAL_CLI_URL"] ?? "http://localhost:8080",
+    signalCliUrl: process.env["SIGNAL_CLI_URL"] ?? "http://localhost:8088",
     signalPhoneNumber: normalizeOptionalString(process.env["SIGNAL_PHONE_NUMBER"]),
 
     anthropicApiKey: process.env["ANTHROPIC_API_KEY"] ?? "",

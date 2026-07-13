@@ -1,0 +1,33 @@
+services:
+  bridge:
+    # This override file must be passed after docker-compose.yml so the bridge
+    # uses the internal signal-cli URL instead of the external-daemon default.
+    depends_on:
+      signal-cli:
+        condition: service_healthy
+    environment:
+      SIGNAL_CLI_URL: "${SIGNAL_CLI_URL:-http://signal-cli:8080}"
+
+  signal-cli:
+    image: "${SIGNAL_CLI_IMAGE:-ghcr.io/timomuc/signal-container:main}"
+    # signal-cli only bundles libsignal native libs for x86_64 Linux.
+    # This must stay linux/amd64 regardless of host architecture.
+    platform: linux/amd64
+    container_name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-signal-cli"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    volumes:
+      - signal-cli-data:/var/lib/signal-cli
+      # Mount the projects tree at the same absolute path the bridge uses so
+      # outbound Signal attachments need no extra path translation.
+      - ${PROJECTS_HOST_DIR:-${BRIDGE_DATA_HOST_DIR:-./bridge-data}/projects}:${PROJECTS_DIR:-/bridge-data/projects}:ro
+    command: ["-a", "${SIGNAL_PHONE_NUMBER}", "daemon", "--http", "0.0.0.0:8080"]
+
+volumes:
+  signal-cli-data:
+    name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-signal-cli-data"

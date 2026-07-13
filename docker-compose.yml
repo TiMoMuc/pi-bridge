@@ -43,7 +43,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       BRIDGE_CONTAINER_NAME: "${COMPOSE_PROJECT_NAME:-pi-bridge}"
-      SIGNAL_CLI_URL: "${SIGNAL_CLI_URL:-http://host.docker.internal:8080}"
+      SIGNAL_CLI_URL: "${SIGNAL_CLI_URL:-http://host.docker.internal:8088}"
       SIGNAL_PHONE_NUMBER: "${SIGNAL_PHONE_NUMBER}"
       NEXTCLOUD_BASE_URL: "${NEXTCLOUD_BASE_URL:-}"
       NEXTCLOUD_BOT_SECRET: "${NEXTCLOUD_BOT_SECRET:-}"

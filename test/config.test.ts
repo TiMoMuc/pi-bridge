@@ -110,7 +110,7 @@ describe("loadConfig", () => {
     expect(c.piModel).toBe("claude-sonnet-4-5");
     expect(c.piThinkingLevel).toBe("off");
     expect(c.bridgeAccessMode).toBe("open");
-    expect(c.signalCliUrl).toBe("http://localhost:8080");
+    expect(c.signalCliUrl).toBe("http://localhost:8088");
     expect(c.bridgeDataDir).toBe("/bridge-data");
     expect(c.projectsDir).toBe("/bridge-data/projects");
     expect(c.adminPhone).toBeUndefined();

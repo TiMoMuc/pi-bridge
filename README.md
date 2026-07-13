@@ -13,6 +13,7 @@ README.md                   ← setup guide and operator docs
 AGENTS.md                   ← source-facing context file for coding agents
 package.json                ← npm package metadata and scripts
 docker-compose.yml          ← base compose stack
+docker-compose.signal.yml   ← optional coupled `signal-cli` companion overlay
 docker-compose.capabilities.yml ← optional capability containers (for example `pdf-api`)
 .env.example                ← operator-facing environment example
 
@@ -29,7 +30,7 @@ test/                       ← vitest tests
 ## Prerequisites
 
 - Docker and Docker Compose
-- A running `signal-cli` HTTP daemon if you want Signal enabled
+- For Signal: either an external `signal-cli` HTTP daemon, or this repo's optional `docker-compose.signal.yml` companion overlay
 - Nextcloud Talk bot credentials if you want Nextcloud enabled
 - Provider credentials for your selected pi provider — API key or supported pi OAuth login (for example GitHub Copilot)
 
@@ -53,6 +54,7 @@ If both Signal and Nextcloud are configured, both start.
 |---|---|---|
 | `SIGNAL_PHONE_NUMBER` | for Signal | Enables Signal transport |
 | `SIGNAL_CLI_URL` | optional | signal-cli JSON-RPC base URL |
+| `SIGNAL_CLI_IMAGE` | optional, coupled Signal mode | published companion image used by `docker-compose.signal.yml` |
 | `NEXTCLOUD_BASE_URL` | for Nextcloud | Enables Nextcloud transport |
 | `NEXTCLOUD_BOT_SECRET` | for Nextcloud | Talk bot webhook secret |
 | `NEXTCLOUD_WEBHOOK_HOST` / `NEXTCLOUD_WEBHOOK_PORT` / `NEXTCLOUD_WEBHOOK_PATH` | optional | Local webhook listener settings |
@@ -63,6 +65,30 @@ If both Signal and Nextcloud are configured, both start.
 | `ADMIN_UI_PUBLISH_HOST` | optional | Host-side Docker publish address for the admin UI port; keep `127.0.0.1` for localhost-only access or use `0.0.0.0` / a specific LAN IP for other machines |
 | provider credentials | required for selected provider | Authentication via API key env vars or pi OAuth state in `PI_CODING_AGENT_DIR` |
 | `BRIDGE_ACCESS_MODE=open|closed|pending` | optional | Unknown transport bindings auto-provision (`open`), are rejected (`closed`), or create a pending approval request in `workspace.json` (`pending`) |
+
+#### Signal deployment modes
+
+Signal has two supported deployment shapes:
+
+1. **External `signal-cli` daemon**
+   - run `signal-cli` separately (for example via the standalone [`signal-container`](https://github.com/TiMoMuc/signal-container) repo)
+   - the standard standalone container publishes `8088` on the host, so from the bridge container the default external URL is `http://host.docker.internal:8088`
+   - inbound Signal attachments still work through `getAttachment`
+   - outbound Signal attachments only work when the external service can read the same absolute workspace paths the bridge sends
+
+2. **Coupled Signal companion**
+   - start the optional `docker-compose.signal.yml` overlay from this repo
+   - the bridge then uses `http://signal-cli:8080` on the internal Compose network; no host port is published by default
+   - the companion mounts `${PROJECTS_HOST_DIR}` at `${PROJECTS_DIR}` so outbound Signal attachments work without extra path translation
+   - `SIGNAL_CLI_IMAGE` lets operators pin or override the published companion image tag
+
+First-time Signal registration is still an operator setup step in both modes. The bridge waits for a ready daemon; it does not provision the Signal account for you. For the coupled companion, a typical first link command is:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.signal.yml run --rm signal-cli link --name "pi-bridge"
+```
+
+For a dedicated bot number, use the same `run --rm signal-cli ...` shape with `register`, optional `register --voice`, and `verify`; see the published `signal-container` docs for the full verification flow.
 
 #### Path model
 
@@ -167,16 +193,28 @@ sudo chown -R <user>:<group> /absolute/path/to/bridge-data
 
 ### 3. Build and start
 
-Base bridge only:
+Base bridge only (Nextcloud-only deployments, or Signal pointed at an external daemon):
 
 ```bash
 docker compose up --build -d
+```
+
+Bridge plus the coupled Signal companion:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.signal.yml up -d
 ```
 
 Bridge plus optional capability containers such as `pdf-api`:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d
+```
+
+Bridge plus the coupled Signal companion and optional capabilities:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.signal.yml -f docker-compose.capabilities.yml up -d
 ```
 
 Note: some optional capability services in `docker-compose.capabilities.yml` may be commented out by default and must be explicitly uncommented before they are started.
@@ -215,8 +253,10 @@ so accepted inbound work and pending replies survive bridge restarts.
 
 ```bash
 docker compose down
-# or, if you started optional capability containers too:
+# or repeat the same overlay file set you started with, for example:
+docker compose -f docker-compose.yml -f docker-compose.signal.yml down
 docker compose -f docker-compose.yml -f docker-compose.capabilities.yml down
+docker compose -f docker-compose.yml -f docker-compose.signal.yml -f docker-compose.capabilities.yml down
 ```
 
 ---
@@ -753,8 +793,10 @@ You do **not** need `PI_PROVIDER` / `PI_MODEL` / `PI_THINKING_LEVEL` just to aut
 ```bash
 git pull
 docker compose up --build -d
-# or, if you use optional capability containers:
+# or repeat the same overlay file set you deployed with, for example:
+docker compose -f docker-compose.yml -f docker-compose.signal.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.signal.yml -f docker-compose.capabilities.yml up -d
 ```
 
 Bridge data under `BRIDGE_DATA_HOST_DIR` (default `bridge-data/`) and workspaces under `PROJECTS_HOST_DIR` (default `bridge-data/projects/`, or `${BRIDGE_DATA_HOST_DIR}/projects` when only `BRIDGE_DATA_HOST_DIR` is set) persist across bridge rebuilds.

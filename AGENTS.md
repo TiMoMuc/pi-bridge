@@ -101,8 +101,10 @@ npm run build        # tsc → dist/
 npm run lint         # eslint src test
 npm run check        # typecheck + lint + test — run before every commit
 
-docker compose up --build                           # bridge (runs all configured transports; Signal still uses external signal-cli)
-docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d   # bridge + optional capability containers such as pdf-api (some capability services may stay commented out by default)
+docker compose up --build                           # bridge only; use this for Nextcloud-only deployments or when Signal points at an external signal-cli daemon
+docker compose -f docker-compose.yml -f docker-compose.signal.yml up -d          # bridge + coupled signal-cli companion from the published signal-container image
+docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d    # bridge + optional capability containers such as pdf-api (some capability services may stay commented out by default)
+docker compose -f docker-compose.yml -f docker-compose.signal.yml -f docker-compose.capabilities.yml up -d   # bridge + coupled signal companion + optional capabilities
 ```
 
 ## File Map

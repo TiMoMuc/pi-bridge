@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./bridge [base|sig|cap|all] [docker compose args...]
+  ./bridge [docker compose args...]
+
+Stacks:
+  base  docker-compose.yml
+  sig   docker-compose.yml + docker-compose.signal.yml
+  cap   docker-compose.yml + docker-compose.capabilities.yml
+  all   docker-compose.yml + docker-compose.signal.yml + docker-compose.capabilities.yml
+
+Defaults:
+  - stack defaults to base
+  - with no docker compose args, runs: up -d --build
+
+Examples:
+  ./bridge
+  ./bridge sig
+  ./bridge cap
+  ./bridge all
+  ./bridge down
+  ./bridge all down
+  ./bridge all logs -f bridge
+  ./bridge sig run --rm signal-cli link --name "pi-bridge"
+EOF
+}
+
+stack="base"
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    base|sig|cap|all)
+      stack="$1"
+      shift
+      ;;
+    help|-h|--help)
+      usage
+      exit 0
+      ;;
+  esac
+fi
+
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    help|-h|--help)
+      usage
+      exit 0
+      ;;
+  esac
+fi
+
+compose_files=("-f" "$root_dir/docker-compose.yml")
+case "$stack" in
+  sig)
+    compose_files+=("-f" "$root_dir/docker-compose.signal.yml")
+    ;;
+  cap)
+    compose_files+=("-f" "$root_dir/docker-compose.capabilities.yml")
+    ;;
+  all)
+    compose_files+=("-f" "$root_dir/docker-compose.signal.yml" "-f" "$root_dir/docker-compose.capabilities.yml")
+    ;;
+esac
+
+if [[ $# -eq 0 ]]; then
+  set -- up -d --build
+fi
+
+cd "$root_dir"
+exec docker compose "${compose_files[@]}" "$@"

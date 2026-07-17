@@ -193,6 +193,22 @@ sudo chown -R <user>:<group> /absolute/path/to/bridge-data
 
 ### 3. Build and start
 
+Short helper from the repo root:
+
+```bash
+./bridge           # base stack → docker compose up -d --build
+./bridge sig       # bridge + coupled Signal companion
+./bridge cap       # bridge + optional capability containers
+./bridge all       # bridge + Signal + capabilities
+```
+
+The helper also passes through arbitrary `docker compose` arguments against the selected stack, for example:
+
+```bash
+./bridge all logs -f bridge
+./bridge sig run --rm signal-cli link --name "pi-bridge"
+```
+
 Base bridge only (Nextcloud-only deployments, or Signal pointed at an external daemon):
 
 ```bash
@@ -252,8 +268,13 @@ so accepted inbound work and pending replies survive bridge restarts.
 ### 6. Stop
 
 ```bash
+./bridge down
+./bridge sig down
+./bridge cap down
+./bridge all down
+
+# or use docker compose directly:
 docker compose down
-# or repeat the same overlay file set you started with, for example:
 docker compose -f docker-compose.yml -f docker-compose.signal.yml down
 docker compose -f docker-compose.yml -f docker-compose.capabilities.yml down
 docker compose -f docker-compose.yml -f docker-compose.signal.yml -f docker-compose.capabilities.yml down
@@ -792,8 +813,14 @@ You do **not** need `PI_PROVIDER` / `PI_MODEL` / `PI_THINKING_LEVEL` just to aut
 
 ```bash
 git pull
+./bridge
+# or pick the stack you deployed with, for example:
+./bridge sig
+./bridge cap
+./bridge all
+
+# direct docker compose equivalents:
 docker compose up --build -d
-# or repeat the same overlay file set you deployed with, for example:
 docker compose -f docker-compose.yml -f docker-compose.signal.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.capabilities.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.signal.yml -f docker-compose.capabilities.yml up -d

@@ -62,6 +62,7 @@ interface WorkspaceUiDetail {
   capabilities: {
     pdfApiEnabled: boolean;
     spreadsheetRecalcEnabled: boolean;
+    geminiSearchEnabled: boolean;
   };
   access: {
     sessionSummary: string;
@@ -435,6 +436,7 @@ function buildWorkspaceUiDetail(
     capabilities: {
       pdfApiEnabled: record.capabilities?.pdfApi?.enabled === true,
       spreadsheetRecalcEnabled: record.capabilities?.spreadsheetRecalc?.enabled === true,
+      geminiSearchEnabled: record.capabilities?.geminiSearch?.enabled === true,
     },
     access: {
       sessionSummary,
@@ -545,6 +547,7 @@ function parseEditableWorkspaceInput(value: unknown): EditableWorkspaceRecordInp
       ? {
         pdfApi: { enabled: isRecord(capabilitiesRaw.pdfApi) && capabilitiesRaw.pdfApi.enabled === true },
         spreadsheetRecalc: { enabled: isRecord(capabilitiesRaw.spreadsheetRecalc) && capabilitiesRaw.spreadsheetRecalc.enabled === true },
+        geminiSearch: { enabled: isRecord(capabilitiesRaw.geminiSearch) && capabilitiesRaw.geminiSearch.enabled === true },
       }
       : undefined,
   };
@@ -946,7 +949,7 @@ function renderAdminPage(): string {
                 <button id="check-state" title="Refresh the current control-plane summary without mutating runtime state.">Check</button>
                 <button id="reconcile" title="Apply current workspace.json desired state across known workspaces.">Reconcile</button>
                 <button id="reconcile-reset" title="Apply desired state, then reset affected inactive cached runners into fresh sessions when their runtime shape drifted. Active workspaces are skipped.">Reconcile + Reset Inactive Runners</button>
-                <button id="reconcile-help" class="ghost info-button" title="Rule of thumb:&#10;- Reconcile for metadata and access-surface changes: labels, whitelists, code-server, calendar, session-watch, boot&#10;- Reconcile + Reset Inactive Runners for live runtime-shape changes: provider/model/thinking and capability or network changes like pdfApi or spreadsheetRecalc">i</button>
+                <button id="reconcile-help" class="ghost info-button" title="Rule of thumb:&#10;- Reconcile for metadata and access-surface changes: labels, whitelists, code-server, calendar, session-watch, boot&#10;- Reconcile + Reset Inactive Runners for live runtime-shape changes: provider/model/thinking and capability or network changes like pdfApi, spreadsheetRecalc, or geminiSearch">i</button>
                 <button id="delete-workspace" class="danger" title="Delete the selected workspace destructively after typed confirmation.">Delete workspace…</button>
               </div>
             </div>
@@ -1065,6 +1068,7 @@ function renderAdminPage(): string {
         capabilities: {
           pdfApi: { enabled: checkedOf("capability-pdfApi") },
           spreadsheetRecalc: { enabled: checkedOf("capability-spreadsheetRecalc") },
+          geminiSearch: { enabled: checkedOf("capability-geminiSearch") },
         },
       };
 
@@ -1205,6 +1209,7 @@ function renderAdminPage(): string {
         + '  <div class="check-grid">'
         + renderCheckboxCard('capability-pdfApi', 'pdfApi', detail.capabilities.pdfApiEnabled)
         + renderCheckboxCard('capability-spreadsheetRecalc', 'spreadsheetRecalc', detail.capabilities.spreadsheetRecalcEnabled)
+        + renderCheckboxCard('capability-geminiSearch', 'geminiSearch', detail.capabilities.geminiSearchEnabled)
         + '  </div>'
         + '</div>'
 
@@ -1314,7 +1319,7 @@ function renderAdminPage(): string {
         });
       });
 
-      ['label', 'workspacePath', 'status', 'signalValue', 'signalWhitelist', 'nextcloudRoomToken', 'nextcloudWhitelist', 'piProvider', 'piModel', 'piThinkingLevel', 'codeServerEnabled', 'calendarEnabled', 'sessionWatchEnabled', 'bootEnabled', 'capability-pdfApi', 'capability-spreadsheetRecalc']
+      ['label', 'workspacePath', 'status', 'signalValue', 'signalWhitelist', 'nextcloudRoomToken', 'nextcloudWhitelist', 'piProvider', 'piModel', 'piThinkingLevel', 'codeServerEnabled', 'calendarEnabled', 'sessionWatchEnabled', 'bootEnabled', 'capability-pdfApi', 'capability-spreadsheetRecalc', 'capability-geminiSearch']
         .forEach((id) => {
           const el = document.getElementById(id);
           if (!el) return;

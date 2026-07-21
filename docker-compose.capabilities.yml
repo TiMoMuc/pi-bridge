@@ -34,6 +34,25 @@ services:
   #     io.pi-bridge.capability: "spreadsheet-recalc"
   #     io.pi-bridge.project: "${COMPOSE_PROJECT_NAME:-pi-bridge}"
 
+  gemini-search:
+    image: "ghcr.io/timomuc/gemini-sidecar:main"
+    container_name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-gemini-search"
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    volumes:
+      - gemini-search-data:/data
+    networks:
+      - capabilities-internal
+    labels:
+      io.pi-bridge.capability: "gemini-search"
+      io.pi-bridge.project: "${COMPOSE_PROJECT_NAME:-pi-bridge}"
+
+volumes:
+  gemini-search-data:
+
 networks:
   capabilities-internal:
     name: "${COMPOSE_PROJECT_NAME:-pi-bridge}-capabilities-internal"

@@ -41,7 +41,7 @@ const baseState = {
     capabilities: {
       pdfApiEnabled: false,
       spreadsheetRecalcEnabled: false,
-      geminiSearchEnabled: false,
+      accessGeminiEnabled: false,
     },
     access: {
       sessionSummary: "inactive",
@@ -72,7 +72,7 @@ function makeRecord(): WorkspaceRecord {
     capabilities: {
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     },
   };
 }
@@ -215,7 +215,7 @@ describe("AdminUiServer", () => {
         capabilities: {
           pdfApi: { enabled: true },
           spreadsheetRecalc: { enabled: false },
-          geminiSearch: { enabled: false },
+          accessGemini: { enabled: false },
         },
         signal: {
           sender: "+15551234567",
@@ -235,7 +235,7 @@ describe("AdminUiServer", () => {
       capabilities: {
         pdfApi: { enabled: true },
         spreadsheetRecalc: { enabled: false },
-        geminiSearch: { enabled: false },
+        accessGemini: { enabled: false },
       },
       signal: {
         sender: "+15551234567",

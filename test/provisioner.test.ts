@@ -80,7 +80,7 @@ describe("UserProvisioner", () => {
     expect(result.record.capabilities).toEqual({
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     });
     expect(result.record.experimental).toBeUndefined();
 
@@ -113,7 +113,7 @@ describe("UserProvisioner", () => {
     expect(result.record.capabilities).toEqual({
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     });
     expect(result.record.experimental).toBeUndefined();
     expect(result.record.piThinkingLevel).toBe("off");
@@ -136,7 +136,7 @@ describe("UserProvisioner", () => {
     expect(result.record.capabilities).toEqual({
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     });
   });
 
@@ -330,7 +330,7 @@ describe("UserProvisioner", () => {
       capabilities: {
         pdfApi: { enabled: true },
         spreadsheetRecalc: { enabled: false },
-        geminiSearch: { enabled: false },
+        accessGemini: { enabled: false },
       },
       signal: {
         sender: "+222",
@@ -356,7 +356,7 @@ describe("UserProvisioner", () => {
     expect(updated.capabilities).toEqual({
       pdfApi: { enabled: true },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     });
     expect(prov.lookup("signal", "+111")).toBeUndefined();
     expect(prov.lookup("signal", "+222")).toBe(provisioned.workspaceKey);
@@ -439,7 +439,7 @@ describe("UserProvisioner", () => {
     expect(raw.ws_a7b3c9?.capabilities).toEqual({
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     });
     expect(raw.ws_a7b3c9?.experimental).toBeUndefined();
   });
@@ -478,7 +478,7 @@ describe("UserProvisioner", () => {
     expect(raw.ws_a7b3c9?.capabilities).toEqual({
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     });
 
     await prov.reload();

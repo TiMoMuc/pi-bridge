@@ -389,7 +389,7 @@ Current capability keys:
   "spreadsheetRecalc": {
     "enabled": false
   },
-  "geminiSearch": {
+  "accessGemini": {
     "enabled": false
   }
 }
@@ -397,8 +397,8 @@ Current capability keys:
 
 Behavior:
 
-- `capabilities.pdfApi.enabled`, `capabilities.spreadsheetRecalc.enabled`, and `capabilities.geminiSearch.enabled` are explicit per workspace
-- `geminiSearch` reuses `GEMINI_API_KEY` or `GOOGLE_API_KEY` from the bridge deployment when that capability container is enabled
+- `capabilities.pdfApi.enabled`, `capabilities.spreadsheetRecalc.enabled`, and `capabilities.accessGemini.enabled` are explicit per workspace
+- `accessGemini` reuses `GEMINI_API_KEY` or `GOOGLE_API_KEY` from the bridge deployment when that capability container is enabled
 - the capability containers themselves are optional infrastructure started through `docker-compose.capabilities.yml`
 - the bridge does **not** proxy capability requests; the sandbox calls the enabled service directly over an internal Docker network
 - enabling a capability may require a fresh runner / sandbox to pick up the new network attachment (`!reset` for that workspace or `admin-workspace.js reconcile --reset-runners` for inactive workspaces)
@@ -446,7 +446,7 @@ Current capabilities:
 
 - `pdfApi` → `http://pdf-api:8000`
 - `spreadsheetRecalc` → `http://spreadsheet-recalc:2004/request`
-- `geminiSearch` → `http://gemini-search:8000` via the bundled helper under `.bridge/capabilities/geminiSearch/gemini.py`
+- `accessGemini` → `http://access-gemini:8000` via the bundled helper under `.bridge/capabilities/accessGemini/gemini.py`
 
 Important honesty note for `spreadsheetRecalc`:
 
@@ -454,7 +454,7 @@ Important honesty note for `spreadsheetRecalc`:
 - the underlying `unoserver-rest-api` backend is broader than recalculation alone
 - in the current trusted-user posture, that restriction is therefore **soft**, not hard
 - the `spreadsheet-recalc` service block is commented out by default in `docker-compose.capabilities.yml` and must be explicitly uncommented before use
-- `geminiSearch` expects the optional capability image `ghcr.io/timomuc/gemini-sidecar:main`; once exposed, its `SKILL.md` currently identifies itself as `access-gemini`
+- `accessGemini` expects the optional capability image `ghcr.io/timomuc/access-gemini-container:main`; once exposed, its `SKILL.md` currently identifies itself as `access-gemini`
 
 Start the optional capability container stack with:
 

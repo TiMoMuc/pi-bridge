@@ -24,7 +24,7 @@ describe("workspace capabilities", () => {
     expect(defaultWorkspaceCapabilitiesRecord()).toEqual({
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     });
   });
 
@@ -32,19 +32,19 @@ describe("workspace capabilities", () => {
     expect(resolveSandboxNetworkName("none", "ws_a7b3c9", {
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     })).toBe("none");
 
     expect(resolveSandboxNetworkName("none", "ws_a7b3c9", {
       pdfApi: { enabled: true },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     })).toBe(workspaceCapabilityNetworkName("ws_a7b3c9"));
 
     expect(resolveSandboxNetworkName("none", "ws_a7b3c9", {
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: true },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     })).toBe(workspaceCapabilityNetworkName("ws_a7b3c9"));
   });
 
@@ -105,7 +105,7 @@ describe("workspace capabilities", () => {
     const result = await manager.applyWorkspaceCapabilities("ws_a7b3c9", {
       pdfApi: { enabled: true },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     }, bridgeDir);
 
     expect(result).toEqual({
@@ -175,7 +175,7 @@ describe("workspace capabilities", () => {
     const result = await manager.applyWorkspaceCapabilities("ws_a7b3c9", {
       pdfApi: { enabled: true },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     }, bridgeDir);
 
     expect(result.attached).toEqual([]);
@@ -233,7 +233,7 @@ describe("workspace capabilities", () => {
     const result = await manager.applyWorkspaceCapabilities("ws_a7b3c9", {
       pdfApi: { enabled: true },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     }, bridgeDir);
 
     expect(result.attached).toEqual([]);
@@ -287,7 +287,7 @@ describe("workspace capabilities", () => {
     const result = await manager.applyWorkspaceCapabilities("ws_a7b3c9", {
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     }, bridgeDir);
 
     expect(result).toEqual({
@@ -359,7 +359,7 @@ describe("workspace capabilities", () => {
     const result = await manager.applyWorkspaceCapabilities("ws_a7b3c9", {
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: true },
-      geminiSearch: { enabled: false },
+      accessGemini: { enabled: false },
     }, bridgeDir);
 
     expect(result).toEqual({
@@ -384,7 +384,7 @@ describe("workspace capabilities", () => {
     const bridgeDir = path.join(tmpDir, "workspace", ".bridge");
     const networks = new Set<string>();
     const containerNetworks = new Map<string, Set<string>>();
-    containerNetworks.set("pi-bridge-gemini-search", new Set(["pi-bridge-capabilities-internal"]));
+    containerNetworks.set("pi-bridge-access-gemini", new Set(["pi-bridge-capabilities-internal"]));
     const skillText = [
       "---",
       "name: access-gemini",
@@ -408,21 +408,21 @@ describe("workspace capabilities", () => {
           return `${args[args.length - 1]}\n`;
         }
         if (args[0] === "cp") {
-          expect(args[1]).toBe("pi-bridge-gemini-search:/capability/.");
+          expect(args[1]).toBe("pi-bridge-access-gemini:/capability/.");
           await fs.mkdir(args[2], { recursive: true });
           await fs.writeFile(path.join(args[2], "SKILL.md"), skillText, "utf8");
           await fs.writeFile(path.join(args[2], "gemini.py"), "print('ok')\n", "utf8");
           return "";
         }
         if (args[0] === "inspect" && args[2] === "{{.State.Running}}") {
-          return args[3] === "pi-bridge-gemini-search" ? "true\n" : "false\n";
+          return args[3] === "pi-bridge-access-gemini" ? "true\n" : "false\n";
         }
         if (args[0] === "inspect" && args[2].includes("NetworkSettings.Networks")) {
           const attached = [...(containerNetworks.get(args[3]) ?? new Set())];
           return `${attached.join("\n")}\n`;
         }
         if (args[0] === "network" && args[1] === "connect") {
-          expect(args[3]).toBe("gemini-search");
+          expect(args[3]).toBe("access-gemini");
           const networkName = args[4];
           const containerName = args[5];
           const attached = containerNetworks.get(containerName) ?? new Set<string>();
@@ -437,24 +437,24 @@ describe("workspace capabilities", () => {
     const result = await manager.applyWorkspaceCapabilities("ws_a7b3c9", {
       pdfApi: { enabled: false },
       spreadsheetRecalc: { enabled: false },
-      geminiSearch: { enabled: true },
+      accessGemini: { enabled: true },
     }, bridgeDir);
 
     expect(result).toEqual({
-      attached: ["geminiSearch"],
+      attached: ["accessGemini"],
       detached: [],
       missing: [],
       networkCreated: true,
       networkRemoved: false,
     });
-    expect(containerNetworks.get("pi-bridge-gemini-search")).toEqual(
+    expect(containerNetworks.get("pi-bridge-access-gemini")).toEqual(
       new Set(["pi-bridge-capabilities-internal", "ws_a7b3c9-net"]),
     );
     await expect(
-      fs.readFile(path.join(bridgeDir, "capabilities", "geminiSearch", "SKILL.md"), "utf8"),
+      fs.readFile(path.join(bridgeDir, "capabilities", "accessGemini", "SKILL.md"), "utf8"),
     ).resolves.toBe(skillText);
     await expect(
-      fs.readFile(path.join(bridgeDir, "capabilities", "geminiSearch", "gemini.py"), "utf8"),
+      fs.readFile(path.join(bridgeDir, "capabilities", "accessGemini", "gemini.py"), "utf8"),
     ).resolves.toBe("print('ok')\n");
   });
 });

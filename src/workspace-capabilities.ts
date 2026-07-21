@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { getLogger } from "./logger.js";
 import { sanitizeWorkspaceKey } from "./sibling-containers.js";
 
-export type WorkspaceCapabilityName = "pdfApi" | "spreadsheetRecalc" | "geminiSearch";
+export type WorkspaceCapabilityName = "pdfApi" | "spreadsheetRecalc" | "accessGemini";
 
 export interface CapabilityToggleRecord {
   enabled: boolean;
@@ -13,7 +13,7 @@ export interface CapabilityToggleRecord {
 export interface WorkspaceCapabilitiesRecord {
   pdfApi?: CapabilityToggleRecord;
   spreadsheetRecalc?: CapabilityToggleRecord;
-  geminiSearch?: CapabilityToggleRecord;
+  accessGemini?: CapabilityToggleRecord;
 }
 
 export interface WorkspaceCapabilityApplyResult {
@@ -47,9 +47,9 @@ const CAPABILITY_CONFIG: Record<WorkspaceCapabilityName, { containerSuffix: stri
     containerSuffix: "spreadsheet-recalc",
     alias: "spreadsheet-recalc",
   },
-  geminiSearch: {
-    containerSuffix: "gemini-search",
-    alias: "gemini-search",
+  accessGemini: {
+    containerSuffix: "access-gemini",
+    alias: "access-gemini",
   },
 };
 
@@ -59,7 +59,7 @@ export function defaultWorkspaceCapabilitiesRecord(): WorkspaceCapabilitiesRecor
   return {
     pdfApi: { enabled: false },
     spreadsheetRecalc: { enabled: false },
-    geminiSearch: { enabled: false },
+    accessGemini: { enabled: false },
   };
 }
 
@@ -71,7 +71,7 @@ export function normalizeWorkspaceCapabilitiesRecord(value: unknown): WorkspaceC
   return {
     pdfApi: normalizeCapabilityToggleRecord(raw["pdfApi"]) ?? { enabled: false },
     spreadsheetRecalc: normalizeCapabilityToggleRecord(raw["spreadsheetRecalc"]) ?? { enabled: false },
-    geminiSearch: normalizeCapabilityToggleRecord(raw["geminiSearch"]) ?? { enabled: false },
+    accessGemini: normalizeCapabilityToggleRecord(raw["accessGemini"]) ?? { enabled: false },
   };
 }
 

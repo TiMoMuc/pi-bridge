@@ -1275,15 +1275,15 @@ function renderAdminPage(): string {
     function formatSandboxAdminOutput(result) {
       const parts = [];
       if (result.stdout) {
-        parts.push('$ stdout\n' + result.stdout.trimEnd());
+        parts.push('$ stdout\\n' + result.stdout.trimEnd());
       }
       if (result.stderr) {
-        parts.push('$ stderr\n' + result.stderr.trimEnd());
+        parts.push('$ stderr\\n' + result.stderr.trimEnd());
       }
       if (parts.length === 0) {
         parts.push('(no stdout/stderr)');
       }
-      return parts.join('\n\n');
+      return parts.join('\\n\\n');
     }
 
     function renderThinkingOptions(current) {
